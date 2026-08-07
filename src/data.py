@@ -5,12 +5,14 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 import torch
+from tqdm.auto import tqdm
 from torch.utils.data import DataLoader, IterableDataset
 
-from src.corpus import iter_source_lines
+from src.corpus import iter_source_files
 from src.settings import load_settings
 from src.tokenizer import Vocabulary, tokenize_text
 
@@ -45,14 +47,32 @@ def _split_bucket(identifier: str) -> float:
     return int.from_bytes(digest, "big") / float(2**64)
 
 
+def _iter_source_lines_with_progress(
+    source_files: list[Path], desc: str
+) -> Iterator[tuple[Path, int, str]]:
+    for file_path in tqdm(source_files, desc=desc, unit="file", leave=True):
+        try:
+            with file_path.open("r", encoding="utf-8", errors="ignore") as file_handle:
+                for line_number, line in enumerate(file_handle, start=1):
+                    cleaned_line = line.strip()
+                    if cleaned_line:
+                        yield file_path, line_number, cleaned_line
+        except OSError:
+            continue
+
+
 def build_vocabulary_from_source(
     source_path: str,
     max_vocab_size: int | None = None,
     min_freq: int = 1,
 ) -> Vocabulary:
+    source_files = list(
+        iter_source_files(source_path, SETTINGS.runtime.allowed_extensions)
+    )
+
     def token_stream() -> Iterator[str]:
-        for _, _, line in iter_source_lines(
-            source_path, SETTINGS.runtime.allowed_extensions
+        for _, _, line in _iter_source_lines_with_progress(
+            source_files, "Building vocabulary"
         ):
             yield from tokenize_text(line)
 
@@ -88,8 +108,11 @@ class NextTokenIterableDataset(IterableDataset[tuple[torch.Tensor, torch.Tensor]
         return bucket >= (self.split_fractions.train + self.split_fractions.validation)
 
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-        for file_path, line_number, line in iter_source_lines(
-            self.source_path, SETTINGS.runtime.allowed_extensions
+        source_files = list(
+            iter_source_files(self.source_path, SETTINGS.runtime.allowed_extensions)
+        )
+        for file_path, line_number, line in _iter_source_lines_with_progress(
+            source_files, f"{self.split.title()} dataset"
         ):
             token_ids = self.vocabulary.encode(line)
             if len(token_ids) < 2:

@@ -7,6 +7,7 @@ import math
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 
 def evaluate_model_metrics(
@@ -24,7 +25,9 @@ def evaluate_model_metrics(
 
     model.eval()
     with torch.no_grad():
-        for inputs, labels in loader:
+        for inputs, labels in tqdm(
+            loader, desc="Evaluating metrics", unit="batch", leave=True
+        ):
             inputs = inputs.to(device)
             labels = labels.to(device)
 

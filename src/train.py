@@ -9,6 +9,7 @@ from pathlib import Path
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 
 from src.data import build_streaming_dataloaders, build_vocabulary_from_source
 from src.metrics import evaluate_model_metrics
@@ -24,13 +25,14 @@ def run_epoch(
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer | None,
     device: torch.device,
+    description: str,
 ) -> float:
     total_loss = 0.0
     total_examples = 0
     is_training = optimizer is not None
 
     model.train(mode=is_training)
-    for inputs, labels in loader:
+    for inputs, labels in tqdm(loader, desc=description, unit="batch", leave=True):
         inputs = inputs.to(device)
         labels = labels.to(device)
 
@@ -60,6 +62,14 @@ def save_artifacts(
     vocabulary_path: str | Path = SETTINGS.runtime.tokenizer_path,
     model_path: str | Path = SETTINGS.runtime.model_path,
 ) -> None:
+    model_path = Path(model_path)
+    vocabulary_path = Path(vocabulary_path)
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    vocabulary_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"Saving tokenizer to {vocabulary_path}...")
+    torch.save(vocabulary_state, vocabulary_path)
+    print(f"Saving model to {model_path}...")
     torch.save(
         {
             "state_dict": model.state_dict(),
@@ -67,9 +77,9 @@ def save_artifacts(
             "max_len": max_len,
             "metrics": metrics_payload,
         },
-        Path(model_path),
+        model_path,
     )
-    torch.save(vocabulary_state, Path(vocabulary_path))
+    print("Saved model and tokenizer artifacts.")
 
 
 def train_model(
@@ -87,7 +97,9 @@ def train_model(
     model_path: str | Path = SETTINGS.runtime.model_path,
 ) -> dict[str, float]:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Building vocabulary from {data_path}...")
     vocabulary = build_vocabulary_from_source(data_path, max_vocab_size=max_vocab_size)
+    print("Building streaming dataloaders...")
     train_loader, validation_loader, test_loader = build_streaming_dataloaders(
         data_path,
         vocabulary,
@@ -110,8 +122,23 @@ def train_model(
     best_state_dict = None
 
     for epoch in range(1, epochs + 1):
-        train_loss = run_epoch(model, train_loader, criterion, optimizer, device)
-        validation_loss = run_epoch(model, validation_loader, criterion, None, device)
+        print(f"Starting epoch {epoch}/{epochs}...")
+        train_loss = run_epoch(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+            description=f"Training epoch {epoch}/{epochs}",
+        )
+        validation_loss = run_epoch(
+            model,
+            validation_loader,
+            criterion,
+            None,
+            device,
+            description=f"Validating epoch {epoch}/{epochs}",
+        )
 
         if validation_loss < best_validation_loss:
             best_validation_loss = validation_loss
@@ -126,12 +153,18 @@ def train_model(
     if best_state_dict is not None:
         model.load_state_dict(best_state_dict)
 
-    test_loss = run_epoch(model, test_loader, criterion, None, device)
+    test_loss = run_epoch(
+        model,
+        test_loader,
+        criterion,
+        None,
+        device,
+        description="Evaluating test split",
+    )
     validation_top_k, validation_average_loss, validation_perplexity = (
         evaluate_model_metrics(model, validation_loader, device)
     )
 
-    vocabulary.save(vocabulary_path)
     save_artifacts(
         model,
         {
