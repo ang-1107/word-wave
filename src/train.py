@@ -1,4 +1,4 @@
-"""Train the WordWave PyTorch model from a plain text corpus."""
+"""Train the WordWave PyTorch model from a streaming text corpus."""
 
 from __future__ import annotations
 
@@ -8,18 +8,15 @@ from typing import Iterable
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 
-from src.data import build_training_sequences, build_vocabulary, split_train_validation
+from src.data import build_streaming_dataloaders, build_vocabulary_from_source
+from src.metrics import evaluate_model_metrics
 from src.model import WordWaveModel
 from src.settings import load_settings
 
 
 SETTINGS = load_settings()
-
-
-def read_text(path: str | Path) -> str:
-    return Path(path).read_text(encoding="utf-8")
 
 
 def run_epoch(
@@ -60,8 +57,7 @@ def save_artifacts(
     model_config: dict[str, object],
     vocabulary_state: dict[str, object],
     max_len: int,
-    evaluation_inputs: torch.Tensor,
-    evaluation_labels: torch.Tensor,
+    metrics_payload: dict[str, float],
     vocabulary_path: str | Path = SETTINGS.runtime.tokenizer_path,
     model_path: str | Path = SETTINGS.runtime.model_path,
 ) -> None:
@@ -70,8 +66,7 @@ def save_artifacts(
             "state_dict": model.state_dict(),
             "model_config": model_config,
             "max_len": max_len,
-            "evaluation_inputs": evaluation_inputs.cpu(),
-            "evaluation_labels": evaluation_labels.cpu(),
+            "metrics": metrics_payload,
         },
         Path(model_path),
     )
@@ -79,7 +74,7 @@ def save_artifacts(
 
 
 def train_model(
-    text: str,
+    data_path: str,
     max_len: int = SETTINGS.training.max_len,
     max_vocab_size: int | None = SETTINGS.training.max_vocab_size,
     embedding_dim: int = SETTINGS.training.embedding_dim,
@@ -89,28 +84,15 @@ def train_model(
     batch_size: int = SETTINGS.training.batch_size,
     epochs: int = SETTINGS.training.epochs,
     learning_rate: float = SETTINGS.training.learning_rate,
-    validation_fraction: float = SETTINGS.training.validation_fraction,
-    seed: int = SETTINGS.training.seed,
     vocabulary_path: str | Path = SETTINGS.runtime.tokenizer_path,
     model_path: str | Path = SETTINGS.runtime.model_path,
 ) -> dict[str, float]:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    vocabulary = build_vocabulary(text, max_vocab_size=max_vocab_size)
-    token_ids = vocabulary.encode(text)
-    inputs, labels = build_training_sequences(
-        token_ids, max_len=max_len, pad_idx=vocabulary.pad_idx
-    )
-    train_dataset, validation_dataset = split_train_validation(
-        inputs, labels, validation_fraction, seed
-    )
-
-    train_loader = DataLoader(
-        TensorDataset(train_dataset.inputs, train_dataset.labels),
-        batch_size=batch_size,
-        shuffle=True,
-    )
-    validation_loader = DataLoader(
-        TensorDataset(validation_dataset.inputs, validation_dataset.labels),
+    vocabulary = build_vocabulary_from_source(data_path, max_vocab_size=max_vocab_size)
+    train_loader, validation_loader, test_loader = build_streaming_dataloaders(
+        data_path,
+        vocabulary,
+        max_len=max_len,
         batch_size=batch_size,
     )
 
@@ -145,6 +127,11 @@ def train_model(
     if best_state_dict is not None:
         model.load_state_dict(best_state_dict)
 
+    test_loss = run_epoch(model, test_loader, criterion, None, device)
+    validation_top_k, validation_average_loss, validation_perplexity = (
+        evaluate_model_metrics(model, validation_loader, device)
+    )
+
     vocabulary.save(vocabulary_path)
     save_artifacts(
         model,
@@ -157,15 +144,21 @@ def train_model(
         },
         vocabulary.to_state_dict(),
         max_len=max_len,
-        evaluation_inputs=validation_dataset.inputs,
-        evaluation_labels=validation_dataset.labels,
+        metrics_payload={
+            "validation_top_k": float(validation_top_k),
+            "validation_loss": float(validation_average_loss),
+            "validation_perplexity": float(validation_perplexity),
+            "test_loss": float(test_loss),
+        },
         vocabulary_path=vocabulary_path,
         model_path=model_path,
     )
 
     return {
-        "train_examples": float(len(train_dataset.inputs)),
-        "validation_examples": float(len(validation_dataset.inputs)),
+        "validation_top_k": float(validation_top_k),
+        "validation_loss": float(validation_average_loss),
+        "validation_perplexity": float(validation_perplexity),
+        "test_loss": float(test_loss),
         "best_validation_loss": float(best_validation_loss),
     }
 
@@ -173,7 +166,9 @@ def train_model(
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train the WordWave PyTorch model.")
     parser.add_argument(
-        "--text-file", required=True, help="Path to a plain-text training corpus."
+        "--data-path",
+        required=True,
+        help="Path to a plain-text file or directory of plaintext files for training.",
     )
     parser.add_argument(
         "--max-len",
@@ -198,12 +193,6 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--learning-rate", type=float, default=SETTINGS.training.learning_rate
     )
-    parser.add_argument(
-        "--validation-fraction",
-        type=float,
-        default=SETTINGS.training.validation_fraction,
-    )
-    parser.add_argument("--seed", type=int, default=SETTINGS.training.seed)
     parser.add_argument("--model-path", default=str(SETTINGS.runtime.model_path))
     parser.add_argument(
         "--tokenizer-path", default=str(SETTINGS.runtime.tokenizer_path)
@@ -214,9 +203,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
 def main(argv: Iterable[str] | None = None) -> None:
     parser = build_argument_parser()
     args = parser.parse_args(argv)
-    text = read_text(args.text_file)
     results = train_model(
-        text=text,
+        data_path=args.data_path,
         max_len=args.max_len,
         max_vocab_size=args.max_vocab_size,
         embedding_dim=args.embedding_dim,
@@ -226,8 +214,6 @@ def main(argv: Iterable[str] | None = None) -> None:
         batch_size=args.batch_size,
         epochs=args.epochs,
         learning_rate=args.learning_rate,
-        validation_fraction=args.validation_fraction,
-        seed=args.seed,
         vocabulary_path=args.tokenizer_path,
         model_path=args.model_path,
     )

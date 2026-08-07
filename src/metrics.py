@@ -6,34 +6,16 @@ import math
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
-
-from src.settings import load_settings
-
-
-SETTINGS = load_settings()
+from torch.utils.data import DataLoader
 
 
 def evaluate_model_metrics(
     model,
-    evaluation_inputs,
-    evaluation_labels,
-    sample_size: int = SETTINGS.runtime.evaluation_sample_size,
+    loader: DataLoader,
+    device: torch.device,
     top_k: int = 5,
 ):
-    """Return top-k accuracy and perplexity on the saved validation split."""
-
-    if (
-        evaluation_inputs is None
-        or evaluation_labels is None
-        or len(evaluation_inputs) == 0
-    ):
-        return 0.0, float("inf")
-
-    device = next(model.parameters()).device
-    dataset = TensorDataset(evaluation_inputs, evaluation_labels)
-    sample_count = min(len(dataset), sample_size)
-    loader = DataLoader(dataset, batch_size=min(128, sample_count), shuffle=False)
+    """Return top-k accuracy, average loss, and perplexity for a dataloader."""
 
     total_examples = 0
     correct_examples = 0
@@ -58,8 +40,9 @@ def evaluate_model_metrics(
             total_examples += labels.size(0)
 
     if total_examples == 0:
-        return 0.0, float("inf")
+        return 0.0, float("inf"), float("inf")
 
     top_k_accuracy = correct_examples / total_examples
-    perplexity = math.exp(total_loss / total_examples)
-    return top_k_accuracy, perplexity
+    average_loss = total_loss / total_examples
+    perplexity = math.exp(average_loss)
+    return top_k_accuracy, average_loss, perplexity

@@ -22,6 +22,7 @@ class RuntimeSettings:
     max_generation_length: int
     default_beam_width: int
     evaluation_sample_size: int
+    allowed_extensions: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ class TrainingSettings:
     epochs: int
     learning_rate: float
     validation_fraction: float
+    test_fraction: float
     seed: int
 
 
@@ -65,6 +67,9 @@ def load_settings() -> Settings:
             max_generation_length=int(runtime_data["max_generation_length"]),
             default_beam_width=int(runtime_data["default_beam_width"]),
             evaluation_sample_size=int(runtime_data["evaluation_sample_size"]),
+            allowed_extensions=tuple(
+                str(extension) for extension in runtime_data["allowed_extensions"]
+            ),
         ),
         training=TrainingSettings(
             max_len=int(training_data["max_len"]),
@@ -77,6 +82,7 @@ def load_settings() -> Settings:
             epochs=int(training_data["epochs"]),
             learning_rate=float(training_data["learning_rate"]),
             validation_fraction=float(training_data["validation_fraction"]),
+            test_fraction=float(training_data["test_fraction"]),
             seed=int(training_data["seed"]),
         ),
     )

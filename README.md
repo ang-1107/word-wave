@@ -31,6 +31,7 @@ word-wave/
 ├── pyproject.toml         # Modern package metadata and dependency ranges
 ├── src/                   # Application package
 │   ├── artifacts.py       # Model/tokenizer loading
+│   ├── corpus.py          # Corpus discovery and streaming file iteration
 │   ├── data.py            # Dataset preparation helpers
 │   ├── generation.py      # Beam search and BLEU helpers
 │   ├── metrics.py         # Model evaluation helpers
@@ -42,6 +43,10 @@ word-wave/
 ├── README.md              # This file
 └── LICENSE
 ```
+
+## Configuration
+
+The static application settings live in `config.yaml`. It defines the model and tokenizer paths, default UI values, supported plaintext file extensions, and the training split fractions used by the streaming corpus loader.
 
 ---
 
@@ -63,11 +68,13 @@ pip install -e ".[dev]"
 All static paths, defaults, and training parameters live in `config.yaml`.
 
 ### 3. Train the model
-Provide a plain-text corpus and train the model to create `word-wave.pt` and `tokenizer.pth`.
+Provide a plain-text file or a directory of plaintext files and train the model to create the model and tokenizer artifacts.
 
 ```bash
-python -m src.train --text-file path/to/corpus.txt --epochs 5 --max-len 20
+python -m src.train --data-path path/to/corpus_or_dir --epochs 5 --max-len 20
 ```
+
+If you pass a directory, the trainer walks it recursively and includes all supported plaintext files. Training uses streamed batches and keeps train, validation, and test splits separate during epochs.
 
 You can adjust `--epochs`, `--max-len`, `--max-vocab-size`, and the model size flags to fit your corpus.
 
@@ -93,7 +100,7 @@ You’ll be able to enter text, pick how many words to generate, and see live pr
   - Perplexity
 
 - **Decoding**: Supports both **greedy** and **beam search** decoding
-- **Training Data**: Any plain-text corpus you provide to the training script
+- **Training Data**: Any supported plaintext file or directory of plaintext files
 
 ---
 

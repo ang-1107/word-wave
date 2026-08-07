@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 import re
 from pathlib import Path
@@ -33,7 +34,18 @@ class Vocabulary:
         max_vocab_size: int | None = None,
         min_freq: int = 1,
     ) -> "Vocabulary":
-        counter = Counter(tokenize_text(text))
+        return cls.build_from_tokens(
+            tokenize_text(text), max_vocab_size=max_vocab_size, min_freq=min_freq
+        )
+
+    @classmethod
+    def build_from_tokens(
+        cls,
+        tokens: Iterable[str],
+        max_vocab_size: int | None = None,
+        min_freq: int = 1,
+    ) -> "Vocabulary":
+        counter = Counter(token for token in tokens if token)
         ordered_tokens = sorted(counter.items(), key=lambda item: (-item[1], item[0]))
 
         word_to_idx = {PAD_TOKEN: 0, UNK_TOKEN: 1}

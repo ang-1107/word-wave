@@ -6,6 +6,22 @@ runtime:
   max_generation_length: 20
   default_beam_width: 5
   evaluation_sample_size: 5000
+  allowed_extensions:
+    - .txt
+    - .md
+    - .markdown
+    - .rst
+    - .text
+    - .csv
+    - .tsv
+    - .log
+    - .json
+    - .yaml
+    - .yml
+    - .py
+    - .toml
+    - .ini
+    - .cfg
 
 training:
   max_len: 20
@@ -18,4 +34,5 @@ training:
   epochs: 5
   learning_rate: 0.001
   validation_fraction: 0.1
+  test_fraction: 0.1
   seed: 42

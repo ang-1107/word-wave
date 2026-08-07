@@ -6,7 +6,6 @@ import streamlit as st
 
 from src.artifacts import load_artifacts
 from src.generation import beam_search_decoder, evaluate_bleu
-from src.metrics import evaluate_model_metrics
 from src.settings import load_settings
 
 
@@ -23,9 +22,7 @@ def get_runtime():
 
 def render_app():
     try:
-        model, vocabulary, max_len, evaluation_inputs, evaluation_labels, _ = (
-            get_runtime()
-        )
+        model, vocabulary, max_len, metrics, _ = get_runtime()
     except FileNotFoundError:
         st.title("WordWave: Next Word Prediction")
         st.warning(
@@ -33,18 +30,17 @@ def render_app():
         )
         return
 
-    with st.spinner("Evaluating model metrics..."):
-        top_5_acc, perplexity_score = evaluate_model_metrics(
-            model, evaluation_inputs, evaluation_labels
-        )
-
     st.title("WordWave: Next Word Prediction")
     st.write("Generate coherent text using a trained BiLSTM + attention PyTorch model.")
 
     st.sidebar.header("Model Evaluation")
-    st.sidebar.metric("Top-5 Accuracy", f"{top_5_acc * 100:.2f}%")
-    st.sidebar.metric("Perplexity", f"{perplexity_score:.2f}")
-    st.sidebar.caption("Evaluated on the saved validation split")
+    st.sidebar.metric(
+        "Top-5 Accuracy", f"{metrics.get('validation_top_k', 0.0) * 100:.2f}%"
+    )
+    st.sidebar.metric(
+        "Perplexity", f"{metrics.get('validation_perplexity', float('inf')):.2f}"
+    )
+    st.sidebar.caption("Evaluated on the saved validation split during training")
 
     seed_text = st.text_input(
         "Enter your seed text", value=SETTINGS.runtime.default_seed_text

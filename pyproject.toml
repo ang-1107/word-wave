@@ -20,14 +20,6 @@ dependencies = [
   "torch>=2.8.0,<3.0.0",
   "streamlit>=1.50.0,<2.0.0",
 ]
-
-[project.optional-dependencies]
-dev = [
-  "black>=24.8.0,<25.0.0",
-  "pre-commit>=4.0.0,<5.0.0",
-  "pyright>=1.1.390,<2.0.0",
-  "ruff>=0.6.0,<1.0.0",
-]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
@@ -37,6 +29,14 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=24.8.0,<25.0.0",
+  "pre-commit>=4.0.0,<5.0.0",
+  "pyright>=1.1.390,<2.0.0",
+  "ruff>=0.6.0,<1.0.0",
 ]
 
 [project.urls]

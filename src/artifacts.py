@@ -27,15 +27,9 @@ def load_artifacts():
     model.load_state_dict(model_bundle["state_dict"])
     model.eval()
 
-    evaluation_inputs = model_bundle.get("evaluation_inputs")
-    evaluation_labels = model_bundle.get("evaluation_labels")
     max_len = int(model_bundle["max_len"])
+    metrics = dict(model_bundle.get("metrics", {}))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
-    if evaluation_inputs is not None:
-        evaluation_inputs = evaluation_inputs.to(device)
-    if evaluation_labels is not None:
-        evaluation_labels = evaluation_labels.to(device)
-
-    return model, vocabulary, max_len, evaluation_inputs, evaluation_labels, device
+    return model, vocabulary, max_len, metrics, device
