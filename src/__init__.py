@@ -1,0 +1,1 @@
+"""WordWave application package."""

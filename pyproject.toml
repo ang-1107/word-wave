@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=58", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "word-wave"
+version = "0.1.0"
+description = "WordWave is a Streamlit app for next-word and short-sequence prediction using a BiLSTM with attention."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Angel Mandhwani", email = "angelmandhwani.24@kgpian.iitkgp.ac.in" },
+]
+keywords = ["streamlit", "tensorflow", "nlp", "text-generation", "machine-learning"]
+dependencies = [
+  "numpy>=2.0.2,<3.0.0",
+  "nltk>=3.9.2,<4.0.0",
+  "scikit-learn>=1.6.1,<2.0.0",
+  "streamlit>=1.50.0,<2.0.0",
+  "tensorflow>=2.20.0,<3.0.0",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/ang-1107/word-wave"
+Repository = "https://github.com/ang-1107/word-wave"
+
+[tool.setuptools]
+packages = ["src"]
