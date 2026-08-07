@@ -15,20 +15,26 @@ class SequenceDataset:
     labels: torch.Tensor
 
 
-def build_training_sequences(token_ids: list[int], max_len: int, pad_idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+def build_training_sequences(
+    token_ids: list[int], max_len: int, pad_idx: int
+) -> tuple[torch.Tensor, torch.Tensor]:
     inputs: list[list[int]] = []
     labels: list[int] = []
 
     for index in range(1, len(token_ids)):
-        window = token_ids[max(0, index - max_len):index]
+        window = token_ids[max(0, index - max_len) : index]
         padded = [pad_idx] * max(0, max_len - len(window)) + window[-max_len:]
         inputs.append(padded)
         labels.append(token_ids[index])
 
     if not inputs:
-        raise ValueError("The training corpus is too small to build next-word sequences.")
+        raise ValueError(
+            "The training corpus is too small to build next-word sequences."
+        )
 
-    return torch.tensor(inputs, dtype=torch.long), torch.tensor(labels, dtype=torch.long)
+    return torch.tensor(inputs, dtype=torch.long), torch.tensor(
+        labels, dtype=torch.long
+    )
 
 
 def split_train_validation(
@@ -59,5 +65,7 @@ def split_train_validation(
     return train_dataset, validation_dataset
 
 
-def build_vocabulary(text: str, max_vocab_size: int | None = None, min_freq: int = 1) -> Vocabulary:
+def build_vocabulary(
+    text: str, max_vocab_size: int | None = None, min_freq: int = 1
+) -> Vocabulary:
     return Vocabulary.build(text, max_vocab_size=max_vocab_size, min_freq=min_freq)

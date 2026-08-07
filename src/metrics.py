@@ -23,7 +23,11 @@ def evaluate_model_metrics(
 ):
     """Return top-k accuracy and perplexity on the saved validation split."""
 
-    if evaluation_inputs is None or evaluation_labels is None or len(evaluation_inputs) == 0:
+    if (
+        evaluation_inputs is None
+        or evaluation_labels is None
+        or len(evaluation_inputs) == 0
+    ):
         return 0.0, float("inf")
 
     device = next(model.parameters()).device
@@ -45,8 +49,12 @@ def evaluate_model_metrics(
             logits = model(inputs)
             total_loss += criterion(logits, labels).item()
 
-            top_k_predictions = torch.topk(logits, k=min(top_k, logits.size(-1)), dim=-1).indices
-            correct_examples += top_k_predictions.eq(labels.unsqueeze(-1)).any(dim=-1).sum().item()
+            top_k_predictions = torch.topk(
+                logits, k=min(top_k, logits.size(-1)), dim=-1
+            ).indices
+            correct_examples += (
+                top_k_predictions.eq(labels.unsqueeze(-1)).any(dim=-1).sum().item()
+            )
             total_examples += labels.size(0)
 
     if total_examples == 0:
@@ -55,4 +63,3 @@ def evaluate_model_metrics(
     top_k_accuracy = correct_examples / total_examples
     perplexity = math.exp(total_loss / total_examples)
     return top_k_accuracy, perplexity
-

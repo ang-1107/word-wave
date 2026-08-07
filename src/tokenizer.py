@@ -49,8 +49,12 @@ class Vocabulary:
 
     @classmethod
     def from_state_dict(cls, state: dict[str, object]) -> "Vocabulary":
-        word_to_idx = {str(word): int(idx) for word, idx in state["word_to_idx"].items()}
-        idx_to_word = {int(idx): str(word) for idx, word in state["idx_to_word"].items()}
+        word_to_idx = {
+            str(word): int(idx) for word, idx in state["word_to_idx"].items()
+        }
+        idx_to_word = {
+            int(idx): str(word) for idx, word in state["idx_to_word"].items()
+        }
         return cls(
             word_to_idx=word_to_idx,
             idx_to_word=idx_to_word,
@@ -86,7 +90,9 @@ class Vocabulary:
         return len(self.word_to_idx)
 
     def encode(self, text: str) -> list[int]:
-        return [self.word_to_idx.get(token, self.unk_idx) for token in tokenize_text(text)]
+        return [
+            self.word_to_idx.get(token, self.unk_idx) for token in tokenize_text(text)
+        ]
 
     def texts_to_sequences(self, texts: list[str]) -> list[list[int]]:
         return [self.encode(text) for text in texts]

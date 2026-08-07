@@ -27,12 +27,3 @@ repos:
     rev: 25.1.0
     hooks:
       - id: black
-
-  # Pyright
-  - repo: local
-    hooks:
-      - id: pyright
-        name: pyright
-        entry: pyright
-        language: system
-        types: [python]

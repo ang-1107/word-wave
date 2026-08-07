@@ -23,14 +23,20 @@ def get_runtime():
 
 def render_app():
     try:
-        model, vocabulary, max_len, evaluation_inputs, evaluation_labels, _ = get_runtime()
+        model, vocabulary, max_len, evaluation_inputs, evaluation_labels, _ = (
+            get_runtime()
+        )
     except FileNotFoundError:
         st.title("WordWave: Next Word Prediction")
-        st.warning("Train the model first so the PyTorch artifacts exist before launching the app.")
+        st.warning(
+            "Train the model first so the PyTorch artifacts exist before launching the app."
+        )
         return
 
     with st.spinner("Evaluating model metrics..."):
-        top_5_acc, perplexity_score = evaluate_model_metrics(model, evaluation_inputs, evaluation_labels)
+        top_5_acc, perplexity_score = evaluate_model_metrics(
+            model, evaluation_inputs, evaluation_labels
+        )
 
     st.title("WordWave: Next Word Prediction")
     st.write("Generate coherent text using a trained BiLSTM + attention PyTorch model.")
@@ -40,7 +46,9 @@ def render_app():
     st.sidebar.metric("Perplexity", f"{perplexity_score:.2f}")
     st.sidebar.caption("Evaluated on the saved validation split")
 
-    seed_text = st.text_input("Enter your seed text", value=SETTINGS.runtime.default_seed_text)
+    seed_text = st.text_input(
+        "Enter your seed text", value=SETTINGS.runtime.default_seed_text
+    )
     next_words = st.slider(
         "How many words to generate?",
         min_value=1,
@@ -61,7 +69,9 @@ def render_app():
         st.markdown("### Generated Text")
         st.success(generated)
 
-        reference = st.text_input("Optional: Enter reference sentence to compute BLEU score")
+        reference = st.text_input(
+            "Optional: Enter reference sentence to compute BLEU score"
+        )
         if reference:
             bleu = evaluate_bleu(reference, generated)
             st.metric("BLEU Score", f"{bleu:.4f}")

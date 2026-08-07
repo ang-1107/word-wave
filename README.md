@@ -12,7 +12,7 @@ WordWave is an intelligent next-word and short-sequence predictor built on a **P
 
 - Built using a deep **Embedding → BiLSTM → Attention → Dense** pipeline for next-word prediction
 - Supports **beam search decoding** to improve generation quality over greedy search
-- Evaluates with key metrics:  
+- Evaluates with key metrics:
   - **Top-5 Accuracy**
   - **Perplexity**
   - **BLEU Score**
@@ -82,14 +82,14 @@ You’ll be able to enter text, pick how many words to generate, and see live pr
 
 ## Model Overview
 
-- **Framework**: PyTorch  
-- **Architecture**:  
+- **Framework**: PyTorch
+- **Architecture**:
   `Embedding → Bidirectional LSTM → Attention → Dense`
-- **Loss**: CrossEntropyLoss  
-- **Optimizer**: Adam  
-- **Evaluation Metrics**:  
-  - Top-5 Accuracy on the saved validation split  
-  - BLEU Score  
+- **Loss**: CrossEntropyLoss
+- **Optimizer**: Adam
+- **Evaluation Metrics**:
+  - Top-5 Accuracy on the saved validation split
+  - BLEU Score
   - Perplexity
 
 - **Decoding**: Supports both **greedy** and **beam search** decoding
@@ -104,7 +104,7 @@ Seed: "deep learning models are"
 Generated: "deep learning models are used to perform various tasks including natural language processing"
 ```
 
-- BLEU Score: 0.38 
+- BLEU Score: 0.38
 - Perplexity: 215.4
 
 ---

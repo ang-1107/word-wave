@@ -97,11 +97,22 @@ def train_model(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     vocabulary = build_vocabulary(text, max_vocab_size=max_vocab_size)
     token_ids = vocabulary.encode(text)
-    inputs, labels = build_training_sequences(token_ids, max_len=max_len, pad_idx=vocabulary.pad_idx)
-    train_dataset, validation_dataset = split_train_validation(inputs, labels, validation_fraction, seed)
+    inputs, labels = build_training_sequences(
+        token_ids, max_len=max_len, pad_idx=vocabulary.pad_idx
+    )
+    train_dataset, validation_dataset = split_train_validation(
+        inputs, labels, validation_fraction, seed
+    )
 
-    train_loader = DataLoader(TensorDataset(train_dataset.inputs, train_dataset.labels), batch_size=batch_size, shuffle=True)
-    validation_loader = DataLoader(TensorDataset(validation_dataset.inputs, validation_dataset.labels), batch_size=batch_size)
+    train_loader = DataLoader(
+        TensorDataset(train_dataset.inputs, train_dataset.labels),
+        batch_size=batch_size,
+        shuffle=True,
+    )
+    validation_loader = DataLoader(
+        TensorDataset(validation_dataset.inputs, validation_dataset.labels),
+        batch_size=batch_size,
+    )
 
     model = WordWaveModel(
         vocab_size=len(vocabulary),
@@ -123,9 +134,13 @@ def train_model(
 
         if validation_loss < best_validation_loss:
             best_validation_loss = validation_loss
-            best_state_dict = {key: value.detach().cpu() for key, value in model.state_dict().items()}
+            best_state_dict = {
+                key: value.detach().cpu() for key, value in model.state_dict().items()
+            }
 
-        print(f"Epoch {epoch}/{epochs} - train_loss={train_loss:.4f} validation_loss={validation_loss:.4f}")
+        print(
+            f"Epoch {epoch}/{epochs} - train_loss={train_loss:.4f} validation_loss={validation_loss:.4f}"
+        )
 
     if best_state_dict is not None:
         model.load_state_dict(best_state_dict)
@@ -157,20 +172,42 @@ def train_model(
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train the WordWave PyTorch model.")
-    parser.add_argument("--text-file", required=True, help="Path to a plain-text training corpus.")
-    parser.add_argument("--max-len", type=int, default=SETTINGS.training.max_len, help="Maximum sequence length used for training.")
-    parser.add_argument("--max-vocab-size", type=int, default=SETTINGS.training.max_vocab_size, help="Maximum number of vocabulary tokens to keep.")
-    parser.add_argument("--embedding-dim", type=int, default=SETTINGS.training.embedding_dim)
+    parser.add_argument(
+        "--text-file", required=True, help="Path to a plain-text training corpus."
+    )
+    parser.add_argument(
+        "--max-len",
+        type=int,
+        default=SETTINGS.training.max_len,
+        help="Maximum sequence length used for training.",
+    )
+    parser.add_argument(
+        "--max-vocab-size",
+        type=int,
+        default=SETTINGS.training.max_vocab_size,
+        help="Maximum number of vocabulary tokens to keep.",
+    )
+    parser.add_argument(
+        "--embedding-dim", type=int, default=SETTINGS.training.embedding_dim
+    )
     parser.add_argument("--hidden-dim", type=int, default=SETTINGS.training.hidden_dim)
     parser.add_argument("--num-layers", type=int, default=SETTINGS.training.num_layers)
     parser.add_argument("--dropout", type=float, default=SETTINGS.training.dropout)
     parser.add_argument("--batch-size", type=int, default=SETTINGS.training.batch_size)
     parser.add_argument("--epochs", type=int, default=SETTINGS.training.epochs)
-    parser.add_argument("--learning-rate", type=float, default=SETTINGS.training.learning_rate)
-    parser.add_argument("--validation-fraction", type=float, default=SETTINGS.training.validation_fraction)
+    parser.add_argument(
+        "--learning-rate", type=float, default=SETTINGS.training.learning_rate
+    )
+    parser.add_argument(
+        "--validation-fraction",
+        type=float,
+        default=SETTINGS.training.validation_fraction,
+    )
     parser.add_argument("--seed", type=int, default=SETTINGS.training.seed)
     parser.add_argument("--model-path", default=str(SETTINGS.runtime.model_path))
-    parser.add_argument("--tokenizer-path", default=str(SETTINGS.runtime.tokenizer_path))
+    parser.add_argument(
+        "--tokenizer-path", default=str(SETTINGS.runtime.tokenizer_path)
+    )
     return parser
 
 
