@@ -118,11 +118,11 @@ class NextTokenIterableDataset(IterableDataset[tuple[torch.Tensor, torch.Tensor]
             if len(token_ids) < 2:
                 continue
 
-            for token_index in range(1, len(token_ids)):
-                sample_id = f"{file_path}:{line_number}:{token_index}"
-                if not self._belongs_to_split(_split_bucket(sample_id)):
-                    continue
+            line_id = f"{file_path}:{line_number}"
+            if not self._belongs_to_split(_split_bucket(line_id)):
+                continue
 
+            for token_index in range(1, len(token_ids)):
                 window = token_ids[max(0, token_index - self.max_len) : token_index]
                 padded_window = self.vocabulary.pad_sequence(window, self.max_len)
                 yield (

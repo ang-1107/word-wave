@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import random
 from collections.abc import Sequence
 from contextlib import nullcontext
 from pathlib import Path
 from typing import cast
 
+import numpy as np
 import torch
 from torch import nn
 from torch.amp.grad_scaler import GradScaler
@@ -179,6 +181,13 @@ def train_model(
     vocabulary_path: str | Path = SETTINGS.runtime.tokenizer_path,
     model_path: str | Path = SETTINGS.runtime.model_path,
 ) -> dict[str, float]:
+    seed = SETTINGS.training.seed
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Building vocabulary from {data_path}...")
     vocabulary = build_vocabulary_from_source(data_path, max_vocab_size=max_vocab_size)

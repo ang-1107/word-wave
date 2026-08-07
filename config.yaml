@@ -10,7 +10,6 @@ runtime:
   default_sampling_temperature: 1.0
   default_top_p: 0.9
   default_decoding_strategy: beam_search
-  evaluation_sample_size: 5000
   allowed_extensions:
     - .txt
     - .md

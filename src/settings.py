@@ -25,7 +25,6 @@ class RuntimeSettings:
     default_sampling_temperature: float
     default_top_p: float
     default_decoding_strategy: str
-    evaluation_sample_size: int
     allowed_extensions: tuple[str, ...]
 
 
@@ -88,7 +87,6 @@ def load_settings() -> Settings:
             default_decoding_strategy=str(
                 runtime_data.get("default_decoding_strategy", "beam_search")
             ),
-            evaluation_sample_size=int(runtime_data["evaluation_sample_size"]),
             allowed_extensions=tuple(
                 str(extension) for extension in runtime_data["allowed_extensions"]
             ),

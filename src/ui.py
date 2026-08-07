@@ -102,15 +102,17 @@ def render_app():
                 top_p=top_p,
                 strategy=decoding_strategy,
             )
+        st.session_state["generated_text"] = generated
 
+    if "generated_text" in st.session_state:
         st.markdown("### Generated Text")
-        st.success(generated)
+        st.success(st.session_state["generated_text"])
 
         reference = st.text_input(
             "Optional: Enter reference sentence to compute BLEU score"
         )
         if reference:
-            bleu = evaluate_bleu(reference, generated)
+            bleu = evaluate_bleu(reference, st.session_state["generated_text"])
             st.metric("BLEU Score", f"{bleu:.4f}")
         else:
             st.info("BLEU Score skipped (no reference provided)")

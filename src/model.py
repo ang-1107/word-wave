@@ -39,9 +39,19 @@ class WordWaveModel(nn.Module):
         )
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        pad_mask = input_ids == self.embedding.padding_idx
         embeddings = self.embedding(input_ids)
         outputs, _ = self.lstm(embeddings)
         attention_logits = self.attention(outputs).squeeze(-1)
+        attention_logits = attention_logits.masked_fill(pad_mask, float("-inf"))
+
+        # Guard against all-padding inputs: if every position is masked,
+        # softmax would produce NaN.  Fall back to uniform attention.
+        all_masked = pad_mask.all(dim=1, keepdim=True)
         attention_weights = torch.softmax(attention_logits, dim=1)
+        if all_masked.any():
+            uniform = torch.ones_like(attention_weights) / attention_weights.size(1)
+            attention_weights = torch.where(all_masked, uniform, attention_weights)
+
         context = torch.bmm(attention_weights.unsqueeze(1), outputs).squeeze(1)
         return self.classifier(context)

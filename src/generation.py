@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import cast
 
 import torch
 from nltk.translate.bleu_score import sentence_bleu
@@ -166,7 +167,7 @@ def generate_text(
     raise ValueError(f"Unsupported decoding strategy: {strategy}")
 
 
-def evaluate_bleu(reference_sentence, generated_sentence):
+def evaluate_bleu(reference_sentence: str, generated_sentence: str) -> float:
     reference = [reference_sentence.split()]
     candidate = generated_sentence.split()
-    return sentence_bleu(reference, candidate, weights=(0.5, 0.5))
+    return float(cast(float, sentence_bleu(reference, candidate, weights=(0.5, 0.5))))
