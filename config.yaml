@@ -1,6 +1,8 @@
 runtime:
   model_path: word-wave.pt
   tokenizer_path: tokenizer.pt
+  latest_checkpoint_path: word-wave.latest.pt
+  best_checkpoint_path: word-wave.best.pt
   default_seed_text: Artificial intelligence is
   default_generation_length: 10
   max_generation_length: 20

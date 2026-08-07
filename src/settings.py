@@ -16,6 +16,8 @@ CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 class RuntimeSettings:
     model_path: Path
     tokenizer_path: Path
+    latest_checkpoint_path: Path
+    best_checkpoint_path: Path
     default_seed_text: str
     default_generation_length: int
     max_generation_length: int
@@ -69,6 +71,12 @@ def load_settings() -> Settings:
         runtime=RuntimeSettings(
             model_path=_resolve_path(runtime_data["model_path"]),
             tokenizer_path=_resolve_path(runtime_data["tokenizer_path"]),
+            latest_checkpoint_path=_resolve_path(
+                runtime_data.get("latest_checkpoint_path", "word-wave.latest.pt")
+            ),
+            best_checkpoint_path=_resolve_path(
+                runtime_data.get("best_checkpoint_path", "word-wave.best.pt")
+            ),
             default_seed_text=str(runtime_data["default_seed_text"]),
             default_generation_length=int(runtime_data["default_generation_length"]),
             max_generation_length=int(runtime_data["max_generation_length"]),

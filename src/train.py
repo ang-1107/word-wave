@@ -6,6 +6,7 @@ import argparse
 from collections.abc import Sequence
 from contextlib import nullcontext
 from pathlib import Path
+from typing import cast
 
 import torch
 from torch import nn
@@ -107,6 +108,58 @@ def save_artifacts(
     print("Saved model and tokenizer artifacts.")
 
 
+def _build_checkpoint_payload(
+    model: WordWaveModel,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau,
+    scaler: GradScaler,
+    epoch: int,
+    best_validation_loss: float,
+    best_state_dict: dict[str, torch.Tensor] | None,
+    epochs_without_improvement: int,
+    model_config: dict[str, object],
+    training_config: dict[str, object],
+    metrics_payload: dict[str, float] | None = None,
+) -> dict[str, object]:
+    checkpoint: dict[str, object] = {
+        "epoch": epoch,
+        "state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "scheduler_state_dict": scheduler.state_dict(),
+        "scaler_state_dict": scaler.state_dict(),
+        "best_validation_loss": best_validation_loss,
+        "best_state_dict": best_state_dict,
+        "epochs_without_improvement": epochs_without_improvement,
+        "model_config": model_config,
+        "training_config": training_config,
+    }
+    if metrics_payload is not None:
+        checkpoint["metrics"] = metrics_payload
+    return checkpoint
+
+
+def _load_training_checkpoint(
+    checkpoint_path: Path,
+    model: WordWaveModel,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau,
+    scaler: GradScaler,
+    device: torch.device,
+) -> dict[str, object] | None:
+    if not checkpoint_path.exists():
+        return None
+
+    print(f"Resuming from latest checkpoint: {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint["state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+    scaler_state = checkpoint.get("scaler_state_dict")
+    if scaler_state:
+        scaler.load_state_dict(scaler_state)
+    return checkpoint
+
+
 def train_model(
     data_path: str,
     max_len: int = SETTINGS.training.max_len,
@@ -145,6 +198,14 @@ def train_model(
         dropout=dropout,
     ).to(device)
 
+    total_parameters = sum(parameter.numel() for parameter in model.parameters())
+    trainable_parameters = sum(
+        parameter.numel() for parameter in model.parameters() if parameter.requires_grad
+    )
+    print(
+        f"Model parameters: {total_parameters:,} total, {trainable_parameters:,} trainable"
+    )
+
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -155,11 +216,52 @@ def train_model(
     )
     scaler = GradScaler("cuda", enabled=use_mixed_precision and device.type == "cuda")
 
+    checkpoint_root = Path(model_path).parent
+    latest_checkpoint_path = SETTINGS.runtime.latest_checkpoint_path
+    best_checkpoint_path = SETTINGS.runtime.best_checkpoint_path
+    if not latest_checkpoint_path.is_absolute():
+        latest_checkpoint_path = checkpoint_root / latest_checkpoint_path
+    if not best_checkpoint_path.is_absolute():
+        best_checkpoint_path = checkpoint_root / best_checkpoint_path
+
+    training_config = {
+        "gradient_clip_norm": gradient_clip_norm,
+        "lr_scheduler_patience": lr_scheduler_patience,
+        "early_stopping_patience": early_stopping_patience,
+        "early_stopping_min_delta": early_stopping_min_delta,
+        "use_mixed_precision": use_mixed_precision,
+    }
+
+    checkpoint = _load_training_checkpoint(
+        latest_checkpoint_path,
+        model,
+        optimizer,
+        scheduler,
+        scaler,
+        device,
+    )
+
     best_validation_loss = float("inf")
     best_state_dict = None
     epochs_without_improvement = 0
+    start_epoch = 1
 
-    for epoch in range(1, epochs + 1):
+    if checkpoint is not None:
+        start_epoch = int(cast(int, checkpoint.get("epoch", 0))) + 1
+        best_validation_loss = float(
+            cast(float, checkpoint.get("best_validation_loss", best_validation_loss))
+        )
+        best_state_dict = cast(
+            dict[str, torch.Tensor] | None, checkpoint.get("best_state_dict")
+        )
+        epochs_without_improvement = int(
+            cast(int, checkpoint.get("epochs_without_improvement", 0))
+        )
+        print(f"Resuming training from epoch {start_epoch}.")
+    else:
+        print("No latest checkpoint found; starting a fresh training run.")
+
+    for epoch in range(start_epoch, epochs + 1):
         print(f"Starting epoch {epoch}/{epochs}...")
         train_loss = run_epoch(
             model,
@@ -188,12 +290,61 @@ def train_model(
                 key: value.detach().cpu() for key, value in model.state_dict().items()
             }
             epochs_without_improvement = 0
+            print(f"New best validation loss: {best_validation_loss:.4f}")
+            torch.save(
+                _build_checkpoint_payload(
+                    model,
+                    optimizer,
+                    scheduler,
+                    scaler,
+                    epoch,
+                    best_validation_loss,
+                    best_state_dict,
+                    epochs_without_improvement,
+                    {
+                        "vocab_size": len(vocabulary),
+                        "embedding_dim": embedding_dim,
+                        "hidden_dim": hidden_dim,
+                        "num_layers": num_layers,
+                        "dropout": dropout,
+                    },
+                    training_config,
+                ),
+                best_checkpoint_path,
+            )
         else:
             epochs_without_improvement += 1
 
         print(
             f"Epoch {epoch}/{epochs} - train_loss={train_loss:.4f} validation_loss={validation_loss:.4f}"
         )
+
+        torch.save(
+            _build_checkpoint_payload(
+                model,
+                optimizer,
+                scheduler,
+                scaler,
+                epoch,
+                best_validation_loss,
+                best_state_dict,
+                epochs_without_improvement,
+                {
+                    "vocab_size": len(vocabulary),
+                    "embedding_dim": embedding_dim,
+                    "hidden_dim": hidden_dim,
+                    "num_layers": num_layers,
+                    "dropout": dropout,
+                },
+                training_config,
+                metrics_payload={
+                    "train_loss": float(train_loss),
+                    "validation_loss": float(validation_loss),
+                },
+            ),
+            latest_checkpoint_path,
+        )
+        print(f"Saved latest checkpoint to {latest_checkpoint_path}")
 
         if epochs_without_improvement >= early_stopping_patience:
             print(
