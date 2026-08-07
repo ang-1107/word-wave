@@ -11,14 +11,15 @@ WordWave is an intelligent next-word and short-sequence predictor built on a **P
 ---
 
 - Built using a deep **Embedding → BiLSTM → Attention → Dense** pipeline for next-word prediction
-- Supports **beam search decoding** to improve generation quality over greedy search
+- Supports **beam search decoding**, **top-p filtering**, and **temperature sampling** to improve generation quality over greedy search
 - Evaluates with key metrics:
   - **Top-5 Accuracy**
   - **Perplexity**
   - **BLEU Score**
 - User can input a **seed sentence and target length**, and the app generates fluent text
 - Designed as a **Streamlit web app** for easy interaction and visualization
-- Trains and stores artifacts as **.pt** and **.pth** files
+- Stabilizes training with **gradient clipping**, **learning rate scheduling**, **mixed precision**, and **early stopping**
+- Trains and stores artifacts as **.pt** files
 
 ---
 
@@ -99,7 +100,8 @@ You’ll be able to enter text, pick how many words to generate, and see live pr
   - BLEU Score
   - Perplexity
 
-- **Decoding**: Supports both **greedy** and **beam search** decoding
+- **Decoding**: Supports **beam search**, **top-p sampling**, and **temperature sampling**
+- **Training Stability**: Gradient clipping, learning rate scheduling, mixed precision, and early stopping
 - **Training Data**: Any supported plaintext file or directory of plaintext files
 
 ---

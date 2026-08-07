@@ -5,7 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from src.artifacts import load_artifacts
-from src.generation import beam_search_decoder, evaluate_bleu
+from src.generation import evaluate_bleu, generate_text
 from src.settings import load_settings
 
 SETTINGS = load_settings()
@@ -51,15 +51,57 @@ def render_app():
         value=SETTINGS.runtime.default_generation_length,
     )
 
+    strategy_options = ["beam_search", "top_p", "temperature"]
+    default_strategy = (
+        SETTINGS.runtime.default_decoding_strategy
+        if SETTINGS.runtime.default_decoding_strategy in strategy_options
+        else "beam_search"
+    )
+    decoding_strategy = st.selectbox(
+        "Decoding strategy",
+        options=strategy_options,
+        index=strategy_options.index(default_strategy),
+        format_func=lambda value: {
+            "beam_search": "Beam search",
+            "top_p": "Top-p sampling",
+            "temperature": "Temperature sampling",
+        }[value],
+    )
+    beam_width = st.slider(
+        "Beam width",
+        min_value=1,
+        max_value=10,
+        value=SETTINGS.runtime.default_beam_width,
+        disabled=decoding_strategy != "beam_search",
+    )
+    temperature = st.slider(
+        "Temperature",
+        min_value=0.1,
+        max_value=2.0,
+        value=SETTINGS.runtime.default_sampling_temperature,
+        step=0.1,
+    )
+    top_p = st.slider(
+        "Top-p",
+        min_value=0.1,
+        max_value=1.0,
+        value=SETTINGS.runtime.default_top_p,
+        step=0.05,
+    )
+
     if st.button("Generate"):
-        generated = beam_search_decoder(
-            model,
-            vocabulary,
-            seed_text,
-            beam_width=SETTINGS.runtime.default_beam_width,
-            next_words=next_words,
-            max_len=max_len,
-        )
+        with st.spinner("Generating sequence..."):
+            generated = generate_text(
+                model,
+                vocabulary,
+                seed_text,
+                next_words=next_words,
+                max_len=max_len,
+                beam_width=beam_width,
+                temperature=temperature,
+                top_p=top_p,
+                strategy=decoding_strategy,
+            )
 
         st.markdown("### Generated Text")
         st.success(generated)

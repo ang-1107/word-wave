@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from contextlib import nullcontext
 from pathlib import Path
 
 import torch
 from torch import nn
+from torch.amp.grad_scaler import GradScaler
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
@@ -26,10 +28,15 @@ def run_epoch(
     optimizer: torch.optim.Optimizer | None,
     device: torch.device,
     description: str,
+    scaler: GradScaler | None = None,
+    gradient_clip_norm: float | None = None,
 ) -> float:
     total_loss = 0.0
     total_examples = 0
     is_training = optimizer is not None
+    use_mixed_precision = (
+        scaler is not None and scaler.is_enabled() and device.type == "cuda"
+    )
 
     model.train(mode=is_training)
     for inputs, labels in tqdm(loader, desc=description, unit="batch", leave=True):
@@ -39,12 +46,28 @@ def run_epoch(
         if is_training:
             optimizer.zero_grad(set_to_none=True)
 
-        logits = model(inputs)
-        loss = criterion(logits, labels)
+        autocast_context = (
+            torch.autocast("cuda", enabled=True)
+            if use_mixed_precision
+            else nullcontext()
+        )
+        with autocast_context:
+            logits = model(inputs)
+            loss = criterion(logits, labels)
 
         if is_training:
-            loss.backward()
-            optimizer.step()
+            if use_mixed_precision and scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                if gradient_clip_norm is not None:
+                    nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                if gradient_clip_norm is not None:
+                    nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_norm)
+                optimizer.step()
 
         batch_size = labels.size(0)
         total_loss += loss.item() * batch_size
@@ -56,6 +79,7 @@ def run_epoch(
 def save_artifacts(
     model: WordWaveModel,
     model_config: dict[str, object],
+    training_config: dict[str, object] | None,
     vocabulary_state: dict[str, object],
     max_len: int,
     metrics_payload: dict[str, float],
@@ -74,6 +98,7 @@ def save_artifacts(
         {
             "state_dict": model.state_dict(),
             "model_config": model_config,
+            "training_config": training_config or {},
             "max_len": max_len,
             "metrics": metrics_payload,
         },
@@ -93,6 +118,11 @@ def train_model(
     batch_size: int = SETTINGS.training.batch_size,
     epochs: int = SETTINGS.training.epochs,
     learning_rate: float = SETTINGS.training.learning_rate,
+    gradient_clip_norm: float = SETTINGS.training.gradient_clip_norm,
+    lr_scheduler_patience: int = SETTINGS.training.lr_scheduler_patience,
+    early_stopping_patience: int = SETTINGS.training.early_stopping_patience,
+    early_stopping_min_delta: float = SETTINGS.training.early_stopping_min_delta,
+    use_mixed_precision: bool = SETTINGS.training.use_mixed_precision,
     vocabulary_path: str | Path = SETTINGS.runtime.tokenizer_path,
     model_path: str | Path = SETTINGS.runtime.model_path,
 ) -> dict[str, float]:
@@ -117,9 +147,17 @@ def train_model(
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=0.5,
+        patience=lr_scheduler_patience,
+    )
+    scaler = GradScaler("cuda", enabled=use_mixed_precision and device.type == "cuda")
 
     best_validation_loss = float("inf")
     best_state_dict = None
+    epochs_without_improvement = 0
 
     for epoch in range(1, epochs + 1):
         print(f"Starting epoch {epoch}/{epochs}...")
@@ -130,6 +168,8 @@ def train_model(
             optimizer,
             device,
             description=f"Training epoch {epoch}/{epochs}",
+            scaler=scaler,
+            gradient_clip_norm=gradient_clip_norm,
         )
         validation_loss = run_epoch(
             model,
@@ -139,16 +179,28 @@ def train_model(
             device,
             description=f"Validating epoch {epoch}/{epochs}",
         )
+        scheduler.step(validation_loss)
 
-        if validation_loss < best_validation_loss:
+        improvement = best_validation_loss - validation_loss
+        if improvement > early_stopping_min_delta:
             best_validation_loss = validation_loss
             best_state_dict = {
                 key: value.detach().cpu() for key, value in model.state_dict().items()
             }
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
 
         print(
             f"Epoch {epoch}/{epochs} - train_loss={train_loss:.4f} validation_loss={validation_loss:.4f}"
         )
+
+        if epochs_without_improvement >= early_stopping_patience:
+            print(
+                "Early stopping triggered after "
+                f"{epoch} epochs without sufficient validation improvement."
+            )
+            break
 
     if best_state_dict is not None:
         model.load_state_dict(best_state_dict)
@@ -173,6 +225,13 @@ def train_model(
             "hidden_dim": hidden_dim,
             "num_layers": num_layers,
             "dropout": dropout,
+        },
+        {
+            "gradient_clip_norm": gradient_clip_norm,
+            "lr_scheduler_patience": lr_scheduler_patience,
+            "early_stopping_patience": early_stopping_patience,
+            "early_stopping_min_delta": early_stopping_min_delta,
+            "use_mixed_precision": use_mixed_precision,
         },
         vocabulary.to_state_dict(),
         max_len=max_len,
@@ -225,6 +284,31 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--learning-rate", type=float, default=SETTINGS.training.learning_rate
     )
+    parser.add_argument(
+        "--gradient-clip-norm",
+        type=float,
+        default=SETTINGS.training.gradient_clip_norm,
+    )
+    parser.add_argument(
+        "--lr-scheduler-patience",
+        type=int,
+        default=SETTINGS.training.lr_scheduler_patience,
+    )
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=SETTINGS.training.early_stopping_patience,
+    )
+    parser.add_argument(
+        "--early-stopping-min-delta",
+        type=float,
+        default=SETTINGS.training.early_stopping_min_delta,
+    )
+    parser.add_argument(
+        "--use-mixed-precision",
+        action=argparse.BooleanOptionalAction,
+        default=SETTINGS.training.use_mixed_precision,
+    )
     parser.add_argument("--model-path", default=str(SETTINGS.runtime.model_path))
     parser.add_argument(
         "--tokenizer-path", default=str(SETTINGS.runtime.tokenizer_path)
@@ -246,6 +330,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         batch_size=args.batch_size,
         epochs=args.epochs,
         learning_rate=args.learning_rate,
+        gradient_clip_norm=args.gradient_clip_norm,
+        lr_scheduler_patience=args.lr_scheduler_patience,
+        early_stopping_patience=args.early_stopping_patience,
+        early_stopping_min_delta=args.early_stopping_min_delta,
+        use_mixed_precision=args.use_mixed_precision,
         vocabulary_path=args.tokenizer_path,
         model_path=args.model_path,
     )

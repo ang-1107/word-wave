@@ -20,6 +20,9 @@ class RuntimeSettings:
     default_generation_length: int
     max_generation_length: int
     default_beam_width: int
+    default_sampling_temperature: float
+    default_top_p: float
+    default_decoding_strategy: str
     evaluation_sample_size: int
     allowed_extensions: tuple[str, ...]
 
@@ -35,6 +38,11 @@ class TrainingSettings:
     batch_size: int
     epochs: int
     learning_rate: float
+    gradient_clip_norm: float
+    lr_scheduler_patience: int
+    early_stopping_patience: int
+    early_stopping_min_delta: float
+    use_mixed_precision: bool
     validation_fraction: float
     test_fraction: float
     seed: int
@@ -65,6 +73,13 @@ def load_settings() -> Settings:
             default_generation_length=int(runtime_data["default_generation_length"]),
             max_generation_length=int(runtime_data["max_generation_length"]),
             default_beam_width=int(runtime_data["default_beam_width"]),
+            default_sampling_temperature=float(
+                runtime_data.get("default_sampling_temperature", 1.0)
+            ),
+            default_top_p=float(runtime_data.get("default_top_p", 0.9)),
+            default_decoding_strategy=str(
+                runtime_data.get("default_decoding_strategy", "beam_search")
+            ),
             evaluation_sample_size=int(runtime_data["evaluation_sample_size"]),
             allowed_extensions=tuple(
                 str(extension) for extension in runtime_data["allowed_extensions"]
@@ -80,6 +95,15 @@ def load_settings() -> Settings:
             batch_size=int(training_data["batch_size"]),
             epochs=int(training_data["epochs"]),
             learning_rate=float(training_data["learning_rate"]),
+            gradient_clip_norm=float(training_data.get("gradient_clip_norm", 1.0)),
+            lr_scheduler_patience=int(training_data.get("lr_scheduler_patience", 1)),
+            early_stopping_patience=int(
+                training_data.get("early_stopping_patience", 3)
+            ),
+            early_stopping_min_delta=float(
+                training_data.get("early_stopping_min_delta", 0.0001)
+            ),
+            use_mixed_precision=bool(training_data.get("use_mixed_precision", True)),
             validation_fraction=float(training_data["validation_fraction"]),
             test_fraction=float(training_data["test_fraction"]),
             seed=int(training_data["seed"]),

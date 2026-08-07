@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Literal
 
 import torch
-from tqdm.auto import tqdm
 from torch.utils.data import DataLoader, IterableDataset
+from tqdm.auto import tqdm
 
 from src.corpus import iter_source_files
 from src.settings import load_settings
