@@ -2,47 +2,57 @@
 
 from __future__ import annotations
 
-import numpy as np
-from sklearn.metrics import top_k_accuracy_score
-from tensorflow.keras.preprocessing.sequence import pad_sequences
+import math
 
-from src.config import EVALUATION_SAMPLE_SIZE
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
+
+from src.settings import load_settings
 
 
-def evaluate_model_metrics(model, tokenizer, max_len, sample_size=EVALUATION_SAMPLE_SIZE):
-    """Return top-5 accuracy and perplexity for a subset of tokenizer samples."""
+SETTINGS = load_settings()
 
-    x_samples = []
-    y_true = []
 
-    word_index = tokenizer.word_index
+def evaluate_model_metrics(
+    model,
+    evaluation_inputs,
+    evaluation_labels,
+    sample_size: int = SETTINGS.runtime.evaluation_sample_size,
+    top_k: int = 5,
+):
+    """Return top-k accuracy and perplexity on the saved validation split."""
 
-    for word, _ in list(word_index.items())[:sample_size]:
-        tokenized = tokenizer.texts_to_sequences([word])[0]
-        if len(tokenized) < 2:
-            continue
-
-        for i in range(1, len(tokenized)):
-            sequence = tokenized[: i + 1]
-            padded = pad_sequences([sequence[:-1]], maxlen=max_len, padding="pre")
-            if padded.shape[1] == max_len:
-                x_samples.append(padded[0])
-                y_true.append(sequence[-1])
-            if len(x_samples) >= sample_size:
-                break
-        if len(x_samples) >= sample_size:
-            break
-
-    if not x_samples:
+    if evaluation_inputs is None or evaluation_labels is None or len(evaluation_inputs) == 0:
         return 0.0, float("inf")
 
-    x_eval = np.array(x_samples)
-    y_true = np.array(y_true)
+    device = next(model.parameters()).device
+    dataset = TensorDataset(evaluation_inputs, evaluation_labels)
+    sample_count = min(len(dataset), sample_size)
+    loader = DataLoader(dataset, batch_size=min(128, sample_count), shuffle=False)
 
-    y_pred_probs = model.predict(x_eval, verbose=0)
-    top_5 = top_k_accuracy_score(y_true, y_pred_probs, k=5)
+    total_examples = 0
+    correct_examples = 0
+    total_loss = 0.0
+    criterion = nn.CrossEntropyLoss(reduction="sum")
 
-    log_probs = np.log(np.take_along_axis(y_pred_probs, y_true[:, None], axis=1).flatten() + 1e-10)
-    perplexity = np.exp(-np.mean(log_probs))
+    model.eval()
+    with torch.no_grad():
+        for inputs, labels in loader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
 
-    return top_5, perplexity
+            logits = model(inputs)
+            total_loss += criterion(logits, labels).item()
+
+            top_k_predictions = torch.topk(logits, k=min(top_k, logits.size(-1)), dim=-1).indices
+            correct_examples += top_k_predictions.eq(labels.unsqueeze(-1)).any(dim=-1).sum().item()
+            total_examples += labels.size(0)
+
+    if total_examples == 0:
+        return 0.0, float("inf")
+
+    top_k_accuracy = correct_examples / total_examples
+    perplexity = math.exp(total_loss / total_examples)
+    return top_k_accuracy, perplexity
+

@@ -2,19 +2,40 @@
 
 from __future__ import annotations
 
-import pickle
+from pathlib import Path
 
-from tensorflow.keras.models import load_model
+import torch
 
-from src.config import MODEL_PATH, TOKENIZER_PATH
+from src.model import WordWaveModel
+from src.settings import load_settings
+from src.tokenizer import Vocabulary, load_vocabulary
+
+
+SETTINGS = load_settings()
 
 
 def load_artifacts():
-    """Load the trained model and tokenizer from disk."""
+    """Load the trained PyTorch model and tokenizer from disk."""
 
-    model = load_model(MODEL_PATH)
-    with open(TOKENIZER_PATH, "rb") as file_handle:
-        tokenizer = pickle.load(file_handle)
-    max_len = model.input_shape[1]
-    vocab_size = len(tokenizer.word_index) + 1
-    return model, tokenizer, max_len, vocab_size
+    model_path = Path(SETTINGS.runtime.model_path)
+    tokenizer_path = Path(SETTINGS.runtime.tokenizer_path)
+
+    model_bundle = torch.load(model_path, map_location="cpu")
+    vocabulary: Vocabulary = load_vocabulary(tokenizer_path)
+
+    model = WordWaveModel(**model_bundle["model_config"])
+    model.load_state_dict(model_bundle["state_dict"])
+    model.eval()
+
+    evaluation_inputs = model_bundle.get("evaluation_inputs")
+    evaluation_labels = model_bundle.get("evaluation_labels")
+    max_len = int(model_bundle["max_len"])
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(device)
+
+    if evaluation_inputs is not None:
+        evaluation_inputs = evaluation_inputs.to(device)
+    if evaluation_labels is not None:
+        evaluation_labels = evaluation_labels.to(device)
+
+    return model, vocabulary, max_len, evaluation_inputs, evaluation_labels, device

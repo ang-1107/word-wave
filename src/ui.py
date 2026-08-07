@@ -5,14 +5,12 @@ from __future__ import annotations
 import streamlit as st
 
 from src.artifacts import load_artifacts
-from src.config import (
-    DEFAULT_BEAM_WIDTH,
-    DEFAULT_GENERATION_LENGTH,
-    DEFAULT_SEED_TEXT,
-    MAX_GENERATION_LENGTH,
-)
 from src.generation import beam_search_decoder, evaluate_bleu
 from src.metrics import evaluate_model_metrics
+from src.settings import load_settings
+
+
+SETTINGS = load_settings()
 
 
 st.set_page_config(page_title="WordWave - Next Word Prediction")
@@ -23,39 +21,39 @@ def get_runtime():
     return load_artifacts()
 
 
-@st.cache_data(show_spinner=True)
-def get_evaluation_metrics(model, tokenizer, max_len):
-    return evaluate_model_metrics(model, tokenizer, max_len)
-
-
 def render_app():
-    model, tokenizer, max_len, _ = get_runtime()
+    try:
+        model, vocabulary, max_len, evaluation_inputs, evaluation_labels, _ = get_runtime()
+    except FileNotFoundError:
+        st.title("WordWave: Next Word Prediction")
+        st.warning("Train the model first so the PyTorch artifacts exist before launching the app.")
+        return
 
     with st.spinner("Evaluating model metrics..."):
-        top_5_acc, perplexity_score = get_evaluation_metrics(model, tokenizer, max_len)
+        top_5_acc, perplexity_score = evaluate_model_metrics(model, evaluation_inputs, evaluation_labels)
 
     st.title("WordWave: Next Word Prediction")
-    st.write("Generate coherent text using a trained BiLSTM + Attention model.")
+    st.write("Generate coherent text using a trained BiLSTM + attention PyTorch model.")
 
     st.sidebar.header("Model Evaluation")
     st.sidebar.metric("Top-5 Accuracy", f"{top_5_acc * 100:.2f}%")
     st.sidebar.metric("Perplexity", f"{perplexity_score:.2f}")
-    st.sidebar.caption("Evaluated on a subset of 5,000 examples")
+    st.sidebar.caption("Evaluated on the saved validation split")
 
-    seed_text = st.text_input("Enter your seed text", value=DEFAULT_SEED_TEXT)
+    seed_text = st.text_input("Enter your seed text", value=SETTINGS.runtime.default_seed_text)
     next_words = st.slider(
         "How many words to generate?",
         min_value=1,
-        max_value=MAX_GENERATION_LENGTH,
-        value=DEFAULT_GENERATION_LENGTH,
+        max_value=SETTINGS.runtime.max_generation_length,
+        value=SETTINGS.runtime.default_generation_length,
     )
 
     if st.button("Generate"):
         generated = beam_search_decoder(
             model,
-            tokenizer,
+            vocabulary,
             seed_text,
-            beam_width=DEFAULT_BEAM_WIDTH,
+            beam_width=SETTINGS.runtime.default_beam_width,
             next_words=next_words,
             max_len=max_len,
         )

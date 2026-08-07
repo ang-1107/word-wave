@@ -1,0 +1,21 @@
+runtime:
+  model_path: word-wave.pt
+  tokenizer_path: tokenizer.pth
+  default_seed_text: Artificial intelligence is
+  default_generation_length: 10
+  max_generation_length: 20
+  default_beam_width: 5
+  evaluation_sample_size: 5000
+
+training:
+  max_len: 20
+  max_vocab_size: 20000
+  embedding_dim: 128
+  hidden_dim: 256
+  num_layers: 1
+  dropout: 0.2
+  batch_size: 128
+  epochs: 5
+  learning_rate: 0.001
+  validation_fraction: 0.1
+  seed: 42
