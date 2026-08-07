@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Iterable, Iterator
 
 from src.settings import load_settings
-
 
 SETTINGS = load_settings()
 DEFAULT_ALLOWED_EXTENSIONS = tuple(SETTINGS.runtime.allowed_extensions)

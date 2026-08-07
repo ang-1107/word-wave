@@ -8,7 +8,6 @@ from src.artifacts import load_artifacts
 from src.generation import beam_search_decoder, evaluate_bleu
 from src.settings import load_settings
 
-
 SETTINGS = load_settings()
 
 

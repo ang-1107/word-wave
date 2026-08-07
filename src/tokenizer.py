@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
-import re
 from pathlib import Path
+from typing import cast
 
 import torch
-
 
 TOKEN_PATTERN = re.compile(r"[a-zA-Z0-9']+")
 PAD_TOKEN = "<pad>"
@@ -33,7 +33,7 @@ class Vocabulary:
         text: str,
         max_vocab_size: int | None = None,
         min_freq: int = 1,
-    ) -> "Vocabulary":
+    ) -> Vocabulary:
         return cls.build_from_tokens(
             tokenize_text(text), max_vocab_size=max_vocab_size, min_freq=min_freq
         )
@@ -44,7 +44,7 @@ class Vocabulary:
         tokens: Iterable[str],
         max_vocab_size: int | None = None,
         min_freq: int = 1,
-    ) -> "Vocabulary":
+    ) -> Vocabulary:
         counter = Counter(token for token in tokens if token)
         ordered_tokens = sorted(counter.items(), key=lambda item: (-item[1], item[0]))
 
@@ -60,12 +60,14 @@ class Vocabulary:
         return cls(word_to_idx=word_to_idx, idx_to_word=idx_to_word)
 
     @classmethod
-    def from_state_dict(cls, state: dict[str, object]) -> "Vocabulary":
+    def from_state_dict(cls, state: dict[str, object]) -> Vocabulary:
+        word_to_idx_state = cast(dict[object, object], state["word_to_idx"])
+        idx_to_word_state = cast(dict[object, object], state["idx_to_word"])
         word_to_idx = {
-            str(word): int(idx) for word, idx in state["word_to_idx"].items()
+            str(word): cast(int, idx) for word, idx in word_to_idx_state.items()
         }
         idx_to_word = {
-            int(idx): str(word) for idx, word in state["idx_to_word"].items()
+            cast(int, idx): str(word) for idx, word in idx_to_word_state.items()
         }
         return cls(
             word_to_idx=word_to_idx,
@@ -86,7 +88,7 @@ class Vocabulary:
         torch.save(self.to_state_dict(), Path(path))
 
     @classmethod
-    def load(cls, path: str | Path) -> "Vocabulary":
+    def load(cls, path: str | Path) -> Vocabulary:
         state = torch.load(Path(path), map_location="cpu")
         return cls.from_state_dict(state)
 

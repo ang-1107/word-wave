@@ -10,7 +10,6 @@ from src.model import WordWaveModel
 from src.settings import load_settings
 from src.tokenizer import Vocabulary, load_vocabulary
 
-
 SETTINGS = load_settings()
 
 

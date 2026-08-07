@@ -36,7 +36,7 @@ def beam_search_decoder(
             top_probabilities, top_indices = torch.topk(probabilities, k=top_k)
 
             for probability, idx in zip(
-                top_probabilities.tolist(), top_indices.tolist()
+                top_probabilities.tolist(), top_indices.tolist(), strict=False
             ):
                 word = vocabulary.idx_to_word.get(int(idx), "")
                 if word in {"", vocabulary.pad_token, vocabulary.unk_token}:

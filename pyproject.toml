@@ -7,7 +7,7 @@ name = "word-wave"
 version = "0.1.0"
 description = "WordWave is a Streamlit app for next-word and short-sequence prediction using a PyTorch BiLSTM with attention."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
   { name = "Angel Mandhwani", email = "angelmandhwani.24@kgpian.iitkgp.ac.in" },
@@ -45,3 +45,35 @@ Repository = "https://github.com/ang-1107/word-wave"
 
 [tool.setuptools]
 packages = ["src"]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  \.git
+  | \.venv
+  | \.ipynb_checkpoints
+  | __pycache__
+)/
+'''
+
+[tool.ruff]
+target-version = "py310"
+fix = true
+extend-exclude = [".venv", ".ipynb_checkpoints"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+combine-as-imports = true
+force-sort-within-sections = false
+
+[tool.pyright]
+pythonVersion = "3.10"
+include = ["app.py", "src"]
+typeCheckingMode = "basic"

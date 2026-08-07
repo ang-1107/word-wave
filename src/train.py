@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Iterable
 
 import torch
 from torch import nn
@@ -14,7 +14,6 @@ from src.data import build_streaming_dataloaders, build_vocabulary_from_source
 from src.metrics import evaluate_model_metrics
 from src.model import WordWaveModel
 from src.settings import load_settings
-
 
 SETTINGS = load_settings()
 
@@ -200,7 +199,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Iterable[str] | None = None) -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     parser = build_argument_parser()
     args = parser.parse_args(argv)
     results = train_model(

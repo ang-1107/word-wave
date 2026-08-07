@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator, Literal
+from typing import Literal
 
 import torch
 from torch.utils.data import DataLoader, IterableDataset
@@ -12,7 +13,6 @@ from torch.utils.data import DataLoader, IterableDataset
 from src.corpus import iter_source_lines
 from src.settings import load_settings
 from src.tokenizer import Vocabulary, tokenize_text
-
 
 SETTINGS = load_settings()
 SplitName = Literal["train", "validation", "test"]
