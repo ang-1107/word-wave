@@ -23,7 +23,10 @@ class RuntimeSettings:
     max_generation_length: int
     default_beam_width: int
     default_sampling_temperature: float
+    default_top_k: int
     default_top_p: float
+    default_repetition_penalty: float
+    default_no_repeat_ngram_size: int
     default_decoding_strategy: str
     allowed_extensions: tuple[str, ...]
 
@@ -85,12 +88,17 @@ def load_settings() -> Settings:
             max_generation_length=int(runtime_data["max_generation_length"]),
             default_beam_width=int(runtime_data["default_beam_width"]),
             default_sampling_temperature=float(
-                runtime_data.get("default_sampling_temperature", 1.0)
+                runtime_data["default_sampling_temperature"]
             ),
-            default_top_p=float(runtime_data.get("default_top_p", 0.9)),
-            default_decoding_strategy=str(
-                runtime_data.get("default_decoding_strategy", "beam_search")
+            default_top_k=int(runtime_data.get("default_top_k", 0)),
+            default_top_p=float(runtime_data["default_top_p"]),
+            default_repetition_penalty=float(
+                runtime_data.get("default_repetition_penalty", 1.0)
             ),
+            default_no_repeat_ngram_size=int(
+                runtime_data.get("default_no_repeat_ngram_size", 0)
+            ),
+            default_decoding_strategy=str(runtime_data["default_decoding_strategy"]),
             allowed_extensions=tuple(
                 str(extension) for extension in runtime_data["allowed_extensions"]
             ),

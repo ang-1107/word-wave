@@ -51,7 +51,7 @@ def render_app():
         value=SETTINGS.runtime.default_generation_length,
     )
 
-    strategy_options = ["beam_search", "top_p", "temperature"]
+    strategy_options = ["beam_search", "sample"]
     default_strategy = (
         SETTINGS.runtime.default_decoding_strategy
         if SETTINGS.runtime.default_decoding_strategy in strategy_options
@@ -63,8 +63,7 @@ def render_app():
         index=strategy_options.index(default_strategy),
         format_func=lambda value: {
             "beam_search": "Beam search",
-            "top_p": "Top-p sampling",
-            "temperature": "Temperature sampling",
+            "sample": "Sampling (Top-k/Top-p/Temp)",
         }[value],
     )
     beam_width = st.slider(
@@ -80,6 +79,7 @@ def render_app():
         max_value=2.0,
         value=SETTINGS.runtime.default_sampling_temperature,
         step=0.1,
+        disabled=decoding_strategy == "beam_search",
     )
     top_p = st.slider(
         "Top-p",
@@ -87,6 +87,28 @@ def render_app():
         max_value=1.0,
         value=SETTINGS.runtime.default_top_p,
         step=0.05,
+        disabled=decoding_strategy == "beam_search",
+    )
+
+    top_k = st.slider(
+        "Top-k",
+        min_value=0,
+        max_value=100,
+        value=SETTINGS.runtime.default_top_k,
+        disabled=decoding_strategy == "beam_search",
+    )
+    repetition_penalty = st.slider(
+        "Repetition Penalty",
+        min_value=1.0,
+        max_value=3.0,
+        value=SETTINGS.runtime.default_repetition_penalty,
+        step=0.1,
+    )
+    no_repeat_ngram_size = st.slider(
+        "No-Repeat N-Gram Size",
+        min_value=0,
+        max_value=5,
+        value=SETTINGS.runtime.default_no_repeat_ngram_size,
     )
 
     if st.button("Generate"):
@@ -99,7 +121,10 @@ def render_app():
                 max_len=max_len,
                 beam_width=beam_width,
                 temperature=temperature,
+                top_k=top_k,
                 top_p=top_p,
+                repetition_penalty=repetition_penalty,
+                no_repeat_ngram_size=no_repeat_ngram_size,
                 strategy=decoding_strategy,
             )
         st.session_state["generated_text"] = generated

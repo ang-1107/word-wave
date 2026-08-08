@@ -6,6 +6,9 @@ import pytest
 import torch
 
 from src.generation import (
+    _apply_no_repeat_ngram,
+    _apply_repetition_penalty,
+    _filter_logits_with_top_k,
     _filter_logits_with_top_p,
     beam_search_decoder,
     evaluate_bleu,
@@ -73,12 +76,72 @@ class TestFilterLogitsWithTopP:
         assert neg_inf_count >= 1
 
     def test_first_token_always_kept(self):
-        """The highest-probability token is never removed, even with
-        a very small top_p."""
-        logits = torch.tensor([10.0, 9.0, 8.0])
-        filtered = _filter_logits_with_top_p(logits, top_p=0.01)
-        # The most probable token should survive
-        assert filtered[0] > float("-inf")
+        logits = torch.tensor([10.0, 5.0, 2.0, 1.0])
+        # Even with top_p very small, the best token is kept to prevent NaNs
+        filtered = _filter_logits_with_top_p(logits, top_p=0.0001)
+        assert filtered[0].item() == 10.0
+        assert torch.isneginf(filtered[1:]).all()
+
+
+class TestFilterLogitsWithTopK:
+    def test_top_k_keeps_top_k(self):
+        logits = torch.tensor([10.0, 5.0, 2.0, 1.0])
+        filtered = _filter_logits_with_top_k(logits, top_k=2)
+        assert filtered[0].item() == 10.0
+        assert filtered[1].item() == 5.0
+        assert torch.isneginf(filtered[2])
+        assert torch.isneginf(filtered[3])
+
+    def test_top_k_zero_keeps_all(self):
+        logits = torch.tensor([10.0, 5.0, 2.0, 1.0])
+        filtered = _filter_logits_with_top_k(logits, top_k=0)
+        assert torch.allclose(filtered, logits)
+
+    def test_top_k_larger_than_vocab(self):
+        logits = torch.tensor([10.0, 5.0, 2.0, 1.0])
+        filtered = _filter_logits_with_top_k(logits, top_k=10)
+        assert torch.allclose(filtered, logits)
+
+
+class TestApplyRepetitionPenalty:
+    def test_penalty_one_no_op(self):
+        logits = torch.tensor([10.0, 5.0, -2.0, 1.0])
+        filtered = _apply_repetition_penalty(logits.clone(), [1, 2], penalty=1.0)
+        assert torch.allclose(filtered, logits)
+
+    def test_penalizes_positive_and_negative_logits(self):
+        logits = torch.tensor([10.0, 5.0, -2.0, 1.0])
+        filtered = _apply_repetition_penalty(logits.clone(), [1, 2], penalty=2.0)
+        # Token 1: 5.0 / 2.0 = 2.5
+        # Token 2: -2.0 * 2.0 = -4.0
+        assert filtered[1].item() == 2.5
+        assert filtered[2].item() == -4.0
+        assert filtered[0].item() == 10.0  # untouched
+        assert filtered[3].item() == 1.0  # untouched
+
+
+class TestApplyNoRepeatNgram:
+    def test_no_op_if_n_zero(self):
+        logits = torch.tensor([10.0, 5.0, 2.0, 1.0])
+        filtered = _apply_no_repeat_ngram(logits.clone(), [1, 2, 3], n=0)
+        assert torch.allclose(filtered, logits)
+
+    def test_no_op_if_sequence_too_short(self):
+        logits = torch.tensor([10.0, 5.0, 2.0, 1.0])
+        # n=3 needs at least 2 tokens of context
+        filtered = _apply_no_repeat_ngram(logits.clone(), [1], n=3)
+        assert torch.allclose(filtered, logits)
+
+    def test_masks_repeated_bigram(self):
+        logits = torch.tensor([10.0, 5.0, 2.0, 1.0])
+        # Sequence: [0, 1, 2, 1]
+        # Current context: [1] (n=2 means context is 1 token)
+        # Occurrences of [1]: index 1 -> followed by 2
+        # Occurrences of [1]: index 3 -> end of sequence
+        # So token 2 should be masked
+        filtered = _apply_no_repeat_ngram(logits.clone(), [0, 1, 2, 1], n=2)
+        assert torch.isneginf(filtered[2])
+        assert not torch.isneginf(filtered[1])
 
 
 # ---------------------------------------------------------------------------
