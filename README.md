@@ -113,7 +113,17 @@ source .venv/bin/activate        # Linux / macOS
 pip install -e ".[dev]"
 ```
 
-### 2. Train the model
+### 2. (Optional) Download a Dataset
+
+If you don't have your own plaintext corpus to train on, WordWave includes a script to dynamically stream random English Wikipedia articles into a text corpus until it reaches a target size (default 64MB):
+
+```bash
+python scripts/build_wiki_dataset.py --size-mb 64
+```
+
+> **Dataset Reproducibility Caveat:** This script uses the public MediaWiki API (`generator=random`). Because the randomization occurs internally on Wikipedia's backend servers, there is no way to provide a seed to guarantee fetching the exact same articles across different runs. While the *training loop* itself is fully deterministic (given a fixed seed and dataset), the actual *corpus generation* via this script is inherently non-deterministic.
+
+### 3. Train the model
 
 ```bash
 python -m src.train --data-path path/to/corpus --epochs 5
@@ -128,7 +138,7 @@ Pass a single file or a directory — the trainer walks it recursively and inclu
 
 All hyperparameters (sequence length, vocab cap, hidden size, learning rate, …) can be overridden via CLI flags. Run `python -m src.train --help` for the full list.
 
-### 3. Launch the Streamlit app
+### 4. Launch the Streamlit app
 
 ```bash
 streamlit run app.py
@@ -156,6 +166,8 @@ word-wave/
 ├── app.py                 # Streamlit entrypoint
 ├── config.yaml            # Runtime and training configuration
 ├── pyproject.toml         # Package metadata, dependencies, and tool config
+├── scripts/
+│   └── build_wiki_dataset.py # Dynamically fetches random Wikipedia articles
 ├── src/
 │   ├── artifacts.py       # Load trained model + tokenizer from disk
 │   ├── corpus.py          # Corpus file discovery and line-level iteration

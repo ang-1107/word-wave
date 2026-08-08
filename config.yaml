@@ -13,6 +13,7 @@ runtime:
   default_repetition_penalty: 1.2
   default_no_repeat_ngram_size: 2
   default_decoding_strategy: beam_search
+  default_corpus_size_mb: 64
 
 training:
   max_len: 80

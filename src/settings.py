@@ -28,6 +28,7 @@ class RuntimeSettings:
     default_repetition_penalty: float
     default_no_repeat_ngram_size: int
     default_decoding_strategy: str
+    default_corpus_size_mb: int
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,7 @@ def load_settings() -> Settings:
                 runtime_data.get("default_no_repeat_ngram_size", 0)
             ),
             default_decoding_strategy=str(runtime_data["default_decoding_strategy"]),
+            default_corpus_size_mb=int(runtime_data.get("default_corpus_size_mb", 64)),
         ),
         training=TrainingSettings(
             max_len=int(training_data["max_len"]),
