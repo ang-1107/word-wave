@@ -23,13 +23,14 @@
 - [Testing](#testing)
 - [References](#references)
 - [Future Work](#future-work)
-- [License](#license)
+- [Author](#author)
 
 ---
 
 ## Features
 
 - **BiLSTM + Attention model** — captures bidirectional context and learns to focus on the most informative timesteps via an additive attention pooling layer.
+- **Byte-Pair Encoding (BPE) Tokenization** — custom subword tokenizer built from scratch that eliminates out-of-vocabulary (OOV) tokens and optimizes vocabulary representation, matching modern LLM pipelines.
 - **Streaming data pipeline** — trains on corpora of arbitrary size using `IterableDataset` with deterministic hash-based train/validation/test splits at the line level, avoiding data leakage across splits.
 - **Multiple decoding strategies** — beam search, nucleus (top-*p*) sampling, and temperature sampling, selectable at generation time.
 - **Reproducible training** — configurable random seed applied across `random`, `numpy`, and `torch` for deterministic runs.
@@ -43,24 +44,7 @@
 
 The model follows an **Embedding → BiLSTM → Additive Attention → Classifier** pipeline:
 
-```
-                  ┌──────────────┐
-  input_ids ───▶  │   Embedding │  (vocab_size × embedding_dim, padding_idx=0)
-                  └──────┬───────┘
-                         ▼
-                  ┌──────────────┐
-                  │   BiLSTM     │  (hidden_dim × 2, bidirectional)
-                  └──────┬───────┘
-                         ▼
-                  ┌──────────────┐
-                  │  Attention   │  Additive: Linear → Tanh → Linear(1)
-                  │  + Pad Mask  │  Masked softmax over non-pad positions
-                  └──────┬───────┘
-                         ▼
-                  ┌──────────────┐
-                  │  Classifier  │  Linear → ReLU → Dropout → Linear(vocab_size)
-                  └──────────────┘
-```
+![Architecture Diagram](architecture.png)
 
 1. **Embedding layer** maps each token to a dense vector. Padding tokens (`<pad>`, index 0) produce zero gradients.
 2. **Bidirectional LSTM** ([Schuster & Paliwal, 1997](#references)) processes the sequence in both directions. The forward and backward hidden states are concatenated at each timestep, yielding a `hidden_dim × 2` representation.
@@ -82,18 +66,6 @@ The model follows an **Embedding → BiLSTM → Additive Attention → Classifie
 | **Data splitting** | Deterministic BLAKE2b hash of `file_path:line_number` assigns each source line to train, validation, or test — all windows from the same line stay in the same split |
 | **Reproducibility** | Configurable `seed` applied to `random`, `numpy`, `torch`, and CUDA RNGs |
 
-### Data Flow
-
-```
-Plaintext corpus → Custom Byte-Pair Encoding (BPE) Tokenizer → Vocabulary (subwords + chars)
-                                             ↓
-                        Sliding window (max_len) → left-padded token ID sequences
-                                             ↓
-                          IterableDataset (hash-bucketed per line into splits)
-                                             ↓
-                                      DataLoader → Model
-```
-
 ---
 
 ## Decoding Strategies
@@ -114,7 +86,9 @@ WordWave supports three autoregressive decoding strategies, selectable via the S
 |---|---|
 | **Top-5 accuracy** | Fraction of validation examples where the ground-truth next token appears in the model's top 5 predictions |
 | **Perplexity** | Exponentiated average cross-entropy loss on the validation split — lower values indicate better predictive performance |
-| **BLEU** | Modified bigram precision with brevity penalty, comparing generated text against a user-supplied reference sentence ([Papineni et al., 2002](#references)) |
+| **BLEU** | Modified n-gram precision with brevity penalty, evaluating fluency and exact match against a reference sentence ([Papineni et al., 2002](#references)) |
+| **ROUGE-L** | Longest Common Subsequence (LCS) based F-score, evaluating structural similarity and recall against a reference sentence ([Lin, 2004](#references)) |
+| **Distinct-N** | Ratio of unique n-grams to total generated n-grams, measuring text diversity and penalizing repetitive loops ([Li et al., 2015](#references)) |
 
 Metrics are computed on the validation split at the end of training and displayed in the Streamlit sidebar. BLEU is also available interactively in the UI.
 
@@ -229,19 +203,23 @@ pytest tests/ -v
 | 9 | K. Papineni et al., "BLEU: a Method for Automatic Evaluation of Machine Translation," *ACL*, 2002. [DOI: 10.3115/1073083.1073135](https://doi.org/10.3115/1073083.1073135) | BLEU evaluation metric |
 | 10 | P. Micikevicius et al., "Mixed Precision Training," *ICLR*, 2018. [arXiv: 1710.03740](https://arxiv.org/abs/1710.03740) | FP16 mixed-precision training |
 | 11 | J. Howard & S. Ruder, "Universal Language Model Fine-tuning for Text Classification," *ACL*, 2018. [arXiv: 1801.06146](https://arxiv.org/abs/1801.06146) | Transfer learning for language models |
+| 12 | C.Y. Lin, "ROUGE: A Package for Automatic Evaluation of Summaries," *Text Summarization Branches Out*, 2004. [ACL: W04-1013](https://aclanthology.org/W04-1013/) | ROUGE-L evaluation metric |
+| 13 | J. Li et al., "A Diversity-Promoting Objective Function for Neural Conversation Models," *NAACL*, 2016. [arXiv: 1510.03055](https://arxiv.org/abs/1510.03055) | Distinct-N diversity metric |
 
 ---
 
 ## Future Work
 
-- **Subword tokenization** — replace the regex word tokenizer with BPE or WordPiece to reduce OOV rate and shrink the vocabulary.
-- **Transformer decoder** — implement a small causal Transformer as an alternate architecture behind the same `generate_text` interface for direct comparison.
-- **Repetition penalty** — add no-repeat-n-gram blocking or frequency-based penalties to reduce looping during generation.
-- **Corpus-level BLEU** — compute BLEU over a held-out sample rather than only single-sentence comparisons in the UI.
-- **REST API** — expose the trained model via a FastAPI or Flask endpoint for backend integration.
+- **Tokenization Caching** — pre-tokenize and cache the dataset to a `.pt` or memory-mapped file to prevent re-reading and re-tokenizing the corpus every epoch, drastically accelerating I/O bounds.
+- **Reservoir Shuffling** — implement a bounded shuffle buffer within the `IterableDataset` to break line-ordering correlations, further improving SGD convergence.
+- **Multi-Worker Dataloading** — implement file-level sharding via `torch.utils.data.get_worker_info()` to enable parallel data loading without duplicating sequences.
+- **Transformer Decoder Baseline** — implement a small causal self-attention Transformer as an alternate architecture behind the same `generate_text` interface for direct comparison against the BiLSTM.
+- **REST API** — expose the trained model via a highly concurrent FastAPI endpoint to enable frontend or backend integration.
 
 ---
 
-## License
+## Author
 
-This project is licensed under the [MIT License](LICENSE).
+[Angel Mandhwani](https://github.com/ang-1107/word-wave)
+
+IIT Kharagpur
