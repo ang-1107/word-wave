@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import random
 from collections.abc import Sequence
 from contextlib import nullcontext
@@ -16,10 +17,23 @@ from torch.amp.grad_scaler import GradScaler
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
-from src.data import build_streaming_dataloaders, build_vocabulary_from_source
-from src.metrics import evaluate_model_metrics
+from src.corpus import iter_source_files
+from src.data import (
+    _split_bucket,
+    build_streaming_dataloaders,
+    build_vocabulary_from_source,
+    get_corpus_split_fractions,
+)
+from src.generation import generate_text
+from src.metrics import (
+    compute_corpus_bleu,
+    compute_distinct_n,
+    compute_rouge_l_corpus,
+    evaluate_model_metrics,
+)
 from src.model import WordWaveModel
 from src.settings import load_settings
+from src.tokenizer import Vocabulary, tokenize_text
 
 SETTINGS = load_settings()
 
@@ -162,6 +176,86 @@ def _load_training_checkpoint(
     return checkpoint
 
 
+def _evaluate_generation_quality(
+    model: WordWaveModel,
+    vocabulary: Vocabulary,
+    source_path: str,
+    max_len: int,
+    sample_size: int,
+    device: torch.device,
+) -> dict[str, float]:
+    """Sample lines from the test split, generate continuations, and compute
+    corpus-level BLEU, ROUGE-L, and distinct-1/2 metrics."""
+
+    source_files = list(
+        iter_source_files(source_path, SETTINGS.runtime.allowed_extensions)
+    )
+    split_fractions = get_corpus_split_fractions()
+    test_threshold = split_fractions.train + split_fractions.validation
+
+    # Collect tokenized lines that fall in the test split
+    test_lines: list[list[str]] = []
+    for file_path in source_files:
+        try:
+            with file_path.open("r", encoding="utf-8", errors="ignore") as fh:
+                for line_number, line in enumerate(fh, start=1):
+                    cleaned = line.strip()
+                    if not cleaned:
+                        continue
+                    line_id = f"{file_path}:{line_number}"
+                    if _split_bucket(line_id) >= test_threshold:
+                        tokens = tokenize_text(cleaned)
+                        if len(tokens) >= 4:
+                            test_lines.append(tokens)
+        except OSError:
+            continue
+
+    if not test_lines:
+        print("No test lines available for generation evaluation.")
+        return {}
+
+    if len(test_lines) > sample_size:
+        test_lines = random.sample(test_lines, sample_size)
+
+    references: list[str] = []
+    hypotheses: list[str] = []
+
+    model.eval()
+    for tokens in tqdm(test_lines, desc="Generation evaluation", unit="sample"):
+        split_point = max(1, len(tokens) // 2)
+        seed = " ".join(tokens[:split_point])
+        reference = " ".join(tokens[split_point:])
+        num_to_generate = len(tokens) - split_point
+
+        generated_full = generate_text(
+            model,
+            vocabulary,
+            seed,
+            next_words=num_to_generate,
+            max_len=max_len,
+            strategy="beam_search",
+            beam_width=5,
+        )
+        # Extract only the generated continuation (remove seed prefix)
+        continuation = generated_full[len(seed) :].strip()
+        references.append(reference)
+        hypotheses.append(continuation)
+
+    result: dict[str, float] = {
+        "corpus_bleu": compute_corpus_bleu(references, hypotheses),
+        "rouge_l": compute_rouge_l_corpus(references, hypotheses),
+        "distinct_1": compute_distinct_n(hypotheses, n=1),
+        "distinct_2": compute_distinct_n(hypotheses, n=2),
+    }
+    print(
+        f"Generation metrics — BLEU={result['corpus_bleu']:.4f}  "
+        f"ROUGE-L={result['rouge_l']:.4f}  "
+        f"distinct-1={result['distinct_1']:.4f}  "
+        f"distinct-2={result['distinct_2']:.4f}"
+    )
+    return result
+
+
 def train_model(
     data_path: str,
     max_len: int = SETTINGS.training.max_len,
@@ -178,6 +272,10 @@ def train_model(
     early_stopping_patience: int = SETTINGS.training.early_stopping_patience,
     early_stopping_min_delta: float = SETTINGS.training.early_stopping_min_delta,
     use_mixed_precision: bool = SETTINGS.training.use_mixed_precision,
+    label_smoothing: float = SETTINGS.training.label_smoothing,
+    lr_warmup_epochs: int = SETTINGS.training.lr_warmup_epochs,
+    tie_weights: bool = SETTINGS.training.tie_weights,
+    evaluation_sample_size: int = SETTINGS.training.evaluation_sample_size,
     vocabulary_path: str | Path = SETTINGS.runtime.tokenizer_path,
     model_path: str | Path = SETTINGS.runtime.model_path,
 ) -> dict[str, float]:
@@ -205,6 +303,7 @@ def train_model(
         hidden_dim=hidden_dim,
         num_layers=num_layers,
         dropout=dropout,
+        tie_weights=tie_weights,
     ).to(device)
 
     total_parameters = sum(parameter.numel() for parameter in model.parameters())
@@ -215,7 +314,16 @@ def train_model(
         f"Model parameters: {total_parameters:,} total, {trainable_parameters:,} trainable"
     )
 
-    criterion = nn.CrossEntropyLoss()
+    model_config: dict[str, object] = {
+        "vocab_size": len(vocabulary),
+        "embedding_dim": embedding_dim,
+        "hidden_dim": hidden_dim,
+        "num_layers": num_layers,
+        "dropout": dropout,
+        "tie_weights": tie_weights,
+    }
+
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
@@ -233,12 +341,14 @@ def train_model(
     if not best_checkpoint_path.is_absolute():
         best_checkpoint_path = checkpoint_root / best_checkpoint_path
 
-    training_config = {
+    training_config: dict[str, object] = {
         "gradient_clip_norm": gradient_clip_norm,
         "lr_scheduler_patience": lr_scheduler_patience,
         "early_stopping_patience": early_stopping_patience,
         "early_stopping_min_delta": early_stopping_min_delta,
         "use_mixed_precision": use_mixed_precision,
+        "label_smoothing": label_smoothing,
+        "lr_warmup_epochs": lr_warmup_epochs,
     }
 
     checkpoint = _load_training_checkpoint(
@@ -270,7 +380,16 @@ def train_model(
     else:
         print("No latest checkpoint found; starting a fresh training run.")
 
+    # Per-epoch metric log
+    log_path = checkpoint_root / "training_log.jsonl"
+
     for epoch in range(start_epoch, epochs + 1):
+        # LR warmup: linearly ramp LR from a small fraction to the full value
+        if lr_warmup_epochs > 0 and epoch <= lr_warmup_epochs:
+            warmup_factor = epoch / lr_warmup_epochs
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = learning_rate * warmup_factor
+
         print(f"Starting epoch {epoch}/{epochs}...")
         train_loss = run_epoch(
             model,
@@ -290,7 +409,10 @@ def train_model(
             device,
             description=f"Validating epoch {epoch}/{epochs}",
         )
-        scheduler.step(validation_loss)
+
+        # Only step the plateau scheduler after warmup completes
+        if epoch > lr_warmup_epochs:
+            scheduler.step(validation_loss)
 
         improvement = best_validation_loss - validation_loss
         if improvement > early_stopping_min_delta:
@@ -310,13 +432,7 @@ def train_model(
                     best_validation_loss,
                     best_state_dict,
                     epochs_without_improvement,
-                    {
-                        "vocab_size": len(vocabulary),
-                        "embedding_dim": embedding_dim,
-                        "hidden_dim": hidden_dim,
-                        "num_layers": num_layers,
-                        "dropout": dropout,
-                    },
+                    model_config,
                     training_config,
                 ),
                 best_checkpoint_path,
@@ -324,9 +440,22 @@ def train_model(
         else:
             epochs_without_improvement += 1
 
+        current_lr = optimizer.param_groups[0]["lr"]
         print(
-            f"Epoch {epoch}/{epochs} - train_loss={train_loss:.4f} validation_loss={validation_loss:.4f}"
+            f"Epoch {epoch}/{epochs} — "
+            f"train_loss={train_loss:.4f}  val_loss={validation_loss:.4f}  "
+            f"lr={current_lr:.6f}"
         )
+
+        # Persist per-epoch metrics
+        epoch_metrics = {
+            "epoch": epoch,
+            "train_loss": float(train_loss),
+            "validation_loss": float(validation_loss),
+            "lr": current_lr,
+        }
+        with open(log_path, "a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(epoch_metrics) + "\n")
 
         torch.save(
             _build_checkpoint_payload(
@@ -338,13 +467,7 @@ def train_model(
                 best_validation_loss,
                 best_state_dict,
                 epochs_without_improvement,
-                {
-                    "vocab_size": len(vocabulary),
-                    "embedding_dim": embedding_dim,
-                    "hidden_dim": hidden_dim,
-                    "num_layers": num_layers,
-                    "dropout": dropout,
-                },
+                model_config,
                 training_config,
                 metrics_payload={
                     "train_loss": float(train_loss),
@@ -365,53 +488,43 @@ def train_model(
     if best_state_dict is not None:
         model.load_state_dict(best_state_dict)
 
-    test_loss = run_epoch(
-        model,
-        test_loader,
-        criterion,
-        None,
-        device,
-        description="Evaluating test split",
-    )
+    # ---- Full evaluation on validation and test splits ----
     validation_top_k, validation_average_loss, validation_perplexity = (
         evaluate_model_metrics(model, validation_loader, device)
     )
+    test_top_k, test_average_loss, test_perplexity = evaluate_model_metrics(
+        model, test_loader, device
+    )
+
+    metrics_payload: dict[str, float] = {
+        "validation_top_k": float(validation_top_k),
+        "validation_loss": float(validation_average_loss),
+        "validation_perplexity": float(validation_perplexity),
+        "test_top_k": float(test_top_k),
+        "test_loss": float(test_average_loss),
+        "test_perplexity": float(test_perplexity),
+    }
+
+    # ---- Corpus-level generation evaluation ----
+    if evaluation_sample_size > 0:
+        generation_metrics = _evaluate_generation_quality(
+            model, vocabulary, data_path, max_len, evaluation_sample_size, device
+        )
+        metrics_payload.update(generation_metrics)
 
     save_artifacts(
         model,
-        {
-            "vocab_size": len(vocabulary),
-            "embedding_dim": embedding_dim,
-            "hidden_dim": hidden_dim,
-            "num_layers": num_layers,
-            "dropout": dropout,
-        },
-        {
-            "gradient_clip_norm": gradient_clip_norm,
-            "lr_scheduler_patience": lr_scheduler_patience,
-            "early_stopping_patience": early_stopping_patience,
-            "early_stopping_min_delta": early_stopping_min_delta,
-            "use_mixed_precision": use_mixed_precision,
-        },
+        model_config,
+        training_config,
         vocabulary.to_state_dict(),
         max_len=max_len,
-        metrics_payload={
-            "validation_top_k": float(validation_top_k),
-            "validation_loss": float(validation_average_loss),
-            "validation_perplexity": float(validation_perplexity),
-            "test_loss": float(test_loss),
-        },
+        metrics_payload=metrics_payload,
         vocabulary_path=vocabulary_path,
         model_path=model_path,
     )
 
-    return {
-        "validation_top_k": float(validation_top_k),
-        "validation_loss": float(validation_average_loss),
-        "validation_perplexity": float(validation_perplexity),
-        "test_loss": float(test_loss),
-        "best_validation_loss": float(best_validation_loss),
-    }
+    metrics_payload["best_validation_loss"] = float(best_validation_loss)
+    return metrics_payload
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -469,6 +582,30 @@ def build_argument_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=SETTINGS.training.use_mixed_precision,
     )
+    parser.add_argument(
+        "--label-smoothing",
+        type=float,
+        default=SETTINGS.training.label_smoothing,
+        help="Label smoothing factor for CrossEntropyLoss.",
+    )
+    parser.add_argument(
+        "--lr-warmup-epochs",
+        type=int,
+        default=SETTINGS.training.lr_warmup_epochs,
+        help="Number of linear LR warmup epochs before ReduceLROnPlateau.",
+    )
+    parser.add_argument(
+        "--tie-weights",
+        action=argparse.BooleanOptionalAction,
+        default=SETTINGS.training.tie_weights,
+        help="Tie embedding and output projection weights.",
+    )
+    parser.add_argument(
+        "--evaluation-sample-size",
+        type=int,
+        default=SETTINGS.training.evaluation_sample_size,
+        help="Number of test lines to sample for generation evaluation (0 to skip).",
+    )
     parser.add_argument("--model-path", default=str(SETTINGS.runtime.model_path))
     parser.add_argument(
         "--tokenizer-path", default=str(SETTINGS.runtime.tokenizer_path)
@@ -495,6 +632,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         early_stopping_patience=args.early_stopping_patience,
         early_stopping_min_delta=args.early_stopping_min_delta,
         use_mixed_precision=args.use_mixed_precision,
+        label_smoothing=args.label_smoothing,
+        lr_warmup_epochs=args.lr_warmup_epochs,
+        tie_weights=args.tie_weights,
+        evaluation_sample_size=args.evaluation_sample_size,
         vocabulary_path=args.tokenizer_path,
         model_path=args.model_path,
     )

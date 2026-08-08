@@ -185,7 +185,7 @@ word-wave/
 │   ├── artifacts.py       # Load trained model + tokenizer from disk
 │   ├── corpus.py          # Corpus file discovery and line-level iteration
 │   ├── data.py            # Streaming IterableDataset with hash-based splits
-│   ├── generation.py      # Beam search, nucleus sampling, temperature sampling, BLEU
+│   ├── generation.py      # Beam search, nucleus and temperature sampling, BLEU
 │   ├── metrics.py         # Top-k accuracy, perplexity evaluation
 │   ├── model.py           # BiLSTM + masked additive attention model
 │   ├── settings.py        # YAML config loader (RuntimeSettings, TrainingSettings)

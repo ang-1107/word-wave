@@ -92,3 +92,32 @@ class TestAttentionMask:
             out = model(x)
         assert not torch.isnan(out).any(), "All-padding input produced NaN"
         assert not torch.isinf(out).any(), "All-padding input produced Inf"
+
+
+# ---------------------------------------------------------------------------
+# Weight Tying
+# ---------------------------------------------------------------------------
+
+
+class TestWeightTying:
+    def test_tie_weights_output_shape(self):
+        model = WordWaveModel(
+            vocab_size=50, embedding_dim=16, hidden_dim=32, tie_weights=True
+        )
+        model.eval()
+        x = torch.randint(0, 50, (4, 10))
+        out = model(x)
+        assert out.shape == (4, 50)
+
+    def test_tie_weights_reduces_parameters(self):
+        model_untied = WordWaveModel(
+            vocab_size=1000, embedding_dim=128, hidden_dim=256, tie_weights=False
+        )
+        model_tied = WordWaveModel(
+            vocab_size=1000, embedding_dim=128, hidden_dim=256, tie_weights=True
+        )
+        untied_params = sum(p.numel() for p in model_untied.parameters())
+        tied_params = sum(p.numel() for p in model_tied.parameters())
+        # The tied model should have fewer parameters because it reuses the embedding weights
+        # instead of having a separate (128 x 1000) linear layer.
+        assert tied_params < untied_params

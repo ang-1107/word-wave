@@ -47,6 +47,10 @@ class TrainingSettings:
     validation_fraction: float
     test_fraction: float
     seed: int
+    evaluation_sample_size: int
+    label_smoothing: float
+    lr_warmup_epochs: int
+    tie_weights: bool
 
 
 @dataclass(frozen=True)
@@ -113,5 +117,11 @@ def load_settings() -> Settings:
             validation_fraction=float(training_data["validation_fraction"]),
             test_fraction=float(training_data["test_fraction"]),
             seed=int(training_data["seed"]),
+            evaluation_sample_size=int(
+                training_data.get("evaluation_sample_size", 500)
+            ),
+            label_smoothing=float(training_data.get("label_smoothing", 0.0)),
+            lr_warmup_epochs=int(training_data.get("lr_warmup_epochs", 0)),
+            tie_weights=bool(training_data.get("tie_weights", False)),
         ),
     )

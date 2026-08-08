@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 
@@ -14,8 +15,10 @@ class WordWaveModel(nn.Module):
         hidden_dim: int = 256,
         num_layers: int = 1,
         dropout: float = 0.2,
+        tie_weights: bool = False,
     ) -> None:
         super().__init__()
+        self.tie_weights_flag = tie_weights
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
         lstm_dropout = dropout if num_layers > 1 else 0.0
         self.lstm = nn.LSTM(
@@ -31,11 +34,17 @@ class WordWaveModel(nn.Module):
             nn.Tanh(),
             nn.Linear(hidden_dim, 1),
         )
+
+        # When weight tying is enabled, the classifier projects to
+        # embedding_dim and the final vocab projection reuses
+        # self.embedding.weight — cutting parameters and coupling the
+        # input/output representations (Press & Wolf, 2017).
+        output_dim = embedding_dim if tie_weights else vocab_size
         self.classifier = nn.Sequential(
             nn.Linear(hidden_dim * 2, hidden_dim),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim, vocab_size),
+            nn.Linear(hidden_dim, output_dim),
         )
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
@@ -54,4 +63,9 @@ class WordWaveModel(nn.Module):
             attention_weights = torch.where(all_masked, uniform, attention_weights)
 
         context = torch.bmm(attention_weights.unsqueeze(1), outputs).squeeze(1)
-        return self.classifier(context)
+        logits = self.classifier(context)
+
+        if self.tie_weights_flag:
+            logits = F.linear(logits, self.embedding.weight)
+
+        return logits

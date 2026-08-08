@@ -6,7 +6,7 @@ import math
 from typing import cast
 
 import torch
-from nltk.translate.bleu_score import sentence_bleu
+from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 
 from src.tokenizer import Vocabulary
 
@@ -170,4 +170,12 @@ def generate_text(
 def evaluate_bleu(reference_sentence: str, generated_sentence: str) -> float:
     reference = [reference_sentence.split()]
     candidate = generated_sentence.split()
-    return float(cast(float, sentence_bleu(reference, candidate, weights=(0.5, 0.5))))
+    smoothing = SmoothingFunction().method4
+    return float(
+        cast(
+            float,
+            sentence_bleu(
+                reference, candidate, weights=(0.5, 0.5), smoothing_function=smoothing
+            ),
+        )
+    )
