@@ -187,9 +187,7 @@ def _evaluate_generation_quality(
     """Sample lines from the test split, generate continuations, and compute
     corpus-level BLEU, ROUGE-L, and distinct-1/2 metrics."""
 
-    source_files = list(
-        iter_source_files(source_path, SETTINGS.runtime.allowed_extensions)
-    )
+    source_files = list(iter_source_files(source_path))
     split_fractions = get_corpus_split_fractions()
     test_threshold = split_fractions.train + split_fractions.validation
 

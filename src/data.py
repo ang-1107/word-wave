@@ -66,9 +66,7 @@ def build_vocabulary_from_source(
     max_vocab_size: int | None = None,
     min_freq: int = 1,
 ) -> Vocabulary:
-    source_files = list(
-        iter_source_files(source_path, SETTINGS.runtime.allowed_extensions)
-    )
+    source_files = list(iter_source_files(source_path))
 
     def token_stream() -> Iterator[str]:
         for _, _, line in _iter_source_lines_with_progress(
@@ -110,9 +108,7 @@ class NextTokenIterableDataset(IterableDataset[tuple[torch.Tensor, torch.Tensor]
         return bucket >= (self.split_fractions.train + self.split_fractions.validation)
 
     def __iter__(self) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-        source_files = list(
-            iter_source_files(self.source_path, SETTINGS.runtime.allowed_extensions)
-        )
+        source_files = list(iter_source_files(self.source_path))
         for file_path, line_number, line in _iter_source_lines_with_progress(
             source_files, f"{self.split.title()} dataset"
         ):

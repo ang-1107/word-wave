@@ -13,22 +13,6 @@ runtime:
   default_repetition_penalty: 1.2
   default_no_repeat_ngram_size: 2
   default_decoding_strategy: beam_search
-  allowed_extensions:
-    - .txt
-    - .md
-    - .markdown
-    - .rst
-    - .text
-    - .csv
-    - .tsv
-    - .log
-    - .json
-    - .yaml
-    - .yml
-    - .py
-    - .toml
-    - .ini
-    - .cfg
 
 training:
   max_len: 80

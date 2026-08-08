@@ -31,6 +31,7 @@
 
 - **BiLSTM + Attention model** — captures bidirectional context and learns to focus on the most informative timesteps via an additive attention pooling layer.
 - **Byte-Pair Encoding (BPE) Tokenization** — custom subword tokenizer built from scratch that eliminates out-of-vocabulary (OOV) tokens and optimizes vocabulary representation, matching modern LLM pipelines.
+- **Dynamic Plaintext Detection** — uses a combined Git-style NULL byte heuristic and strict UTF-8 checking to automatically distinguish and load any valid text file (regardless of extension) while silently ignoring binaries. *(Note: legacy encodings like windows-1252 are intentionally ignored to ensure a clean UTF-8 corpus).*
 - **Streaming data pipeline** — trains on corpora of arbitrary size using `IterableDataset` with deterministic hash-based train/validation/test splits at the line level, avoiding data leakage across splits.
 - **Multiple decoding strategies** — beam search, nucleus (top-*p*) sampling, and temperature sampling, selectable at generation time.
 - **Reproducible training** — configurable random seed applied across `random`, `numpy`, and `torch` for deterministic runs.
@@ -118,7 +119,7 @@ pip install -e ".[dev]"
 python -m src.train --data-path path/to/corpus --epochs 5
 ```
 
-Pass a single file or a directory — the trainer walks it recursively and includes all files matching `allowed_extensions`. Training produces two artifacts in the project root:
+Pass a single file or a directory — the trainer walks it recursively and includes all valid text files. A dynamic heuristic (NULL byte detection + strict UTF-8 checking) is used to automatically distinguish plaintext files from binaries, so there is no need to configure file extensions. Training produces two artifacts in the project root:
 
 | File | Contents |
 |---|---|
@@ -167,10 +168,12 @@ word-wave/
 │   ├── train.py           # End-to-end training loop with checkpointing
 │   └── ui.py              # Streamlit dashboard (generation + metrics display)
 ├── tests/
+│   ├── test_corpus.py     # Dynamic plaintext heuristic (NULL byte / UTF-8) tests
 │   ├── test_tokenizer.py  # Vocabulary build, encode/decode, pad, serialization
 │   ├── test_data.py       # Split bucket, split assignment, leakage regression
 │   ├── test_model.py      # Forward pass, attention mask, edge cases
-│   └── test_generation.py # Sampling, top-p filtering, beam search, BLEU
+│   ├── test_generation.py # Sampling, top-p filtering, beam search, BLEU
+│   └── test_metrics.py    # LCS, ROUGE-L, BLEU, Distinct-N implementation tests
 ├── README.md
 └── LICENSE
 ```
