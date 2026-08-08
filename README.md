@@ -85,7 +85,7 @@ The model follows an **Embedding → BiLSTM → Additive Attention → Classifie
 ### Data Flow
 
 ```
-Plaintext corpus → Regex word tokenizer → Vocabulary (frequency-ranked, capped)
+Plaintext corpus → Custom Byte-Pair Encoding (BPE) Tokenizer → Vocabulary (subwords + chars)
                                              ↓
                         Sliding window (max_len) → left-padded token ID sequences
                                              ↓

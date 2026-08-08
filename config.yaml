@@ -31,7 +31,7 @@ runtime:
     - .cfg
 
 training:
-  max_len: 20
+  max_len: 80
   max_vocab_size: 20000
   embedding_dim: 128
   hidden_dim: 256

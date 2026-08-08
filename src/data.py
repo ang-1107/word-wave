@@ -77,7 +77,9 @@ def build_vocabulary_from_source(
             yield from tokenize_text(line)
 
     return Vocabulary.build_from_tokens(
-        token_stream(), max_vocab_size=max_vocab_size, min_freq=min_freq
+        token_stream(),
+        max_vocab_size=max_vocab_size if max_vocab_size is not None else 10000,
+        min_freq=min_freq,
     )
 
 
