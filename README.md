@@ -121,7 +121,7 @@ If you don't have your own plaintext corpus to train on, WordWave includes a scr
 python scripts/build_wiki_dataset.py --size-mb 64
 ```
 
-> **Dataset Reproducibility Caveat:** This script uses the public MediaWiki API (`generator=random`). Because the randomization occurs internally on Wikipedia's backend servers, there is no way to provide a seed to guarantee fetching the exact same articles across different runs. While the *training loop* itself is fully deterministic (given a fixed seed and dataset), the actual *corpus generation* via this script is inherently non-deterministic.
+> **Dataset Size Caveat:** This script downloads the `Wikitext-103` training corpus, which has a maximum size of roughly **514 MB**. If you pass a `--size-mb` value greater than 514, the script will naturally stop and clip the dataset at the maximum available size.
 
 ### 3. Train the model
 

@@ -1,91 +1,112 @@
-"""Script to build a training corpus from random English Wikipedia articles."""
+"""Script to build a training corpus using the Wikitext-103 dataset."""
 
 import argparse
-import json
 import sys
-import time
-import urllib.error
+import tarfile
 import urllib.request
 from pathlib import Path
 
-API_URL = "https://en.wikipedia.org/w/api.php?action=query&generator=random&grnnamespace=0&prop=extracts&explaintext=1&format=json"
+# URL for Wikitext-103 from fast.ai mirror
+API_URL = "https://s3.amazonaws.com/fast-ai-nlp/wikitext-103.tgz"
 MAX_FILE_SIZE_BYTES = 64 * 1024 * 1024  # 64 MB chunking limit
 
 
-def fetch_random_wiki_articles() -> list[str]:
-    """Fetches a batch of random Wikipedia articles as plaintext."""
-    req = urllib.request.Request(
-        API_URL, headers={"User-Agent": "WordWave-Dataset-Builder/1.0"}
-    )
+def reporthook(count, block_size, total_size):
+    """Progress bar for urlretrieve."""
+    if total_size > 0:
+        progress = int(count * block_size * 100 / total_size)
+        progress = min(progress, 100)
+        sys.stdout.write(
+            f"\rDownloading Wikitext-103 archive: {progress}% ({total_size / (1024 * 1024):.1f} MB)"
+        )
+        sys.stdout.flush()
+
+
+def download_archive(output_path: Path) -> bool:
+    """Downloads the Wikitext-103 archive."""
     try:
-        with urllib.request.urlopen(req) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            articles = []
-            for page in data.get("query", {}).get("pages", {}).values():
-                text = page.get("extract", "").strip()
-                if text:
-                    articles.append(text)
-            return articles
-    except urllib.error.HTTPError as e:
-        # Wikipedia rate limits API requests. Back off for a bit if we hit it.
-        if e.code == 429:
-            time.sleep(2.0)
-        else:
-            time.sleep(1.0)
-        return []
-    except urllib.error.URLError:
-        time.sleep(1.0)
-        return []
+        urllib.request.urlretrieve(API_URL, str(output_path), reporthook)
+        print("\nDownload complete.")
+        return True
+    except Exception as e:
+        print(f"\nError downloading Wikipedia data: {e}", file=sys.stderr)
+        return False
 
 
 def build_dataset(target_mb: float, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     target_bytes = int(target_mb * 1024 * 1024)
+    archive_path = output_dir / "wikitext-103.tgz"
+
+    if not download_archive(archive_path):
+        return
+
+    print(f"Extracting up to {target_mb} MB of text into {output_dir}/...")
+
     total_written = 0
     file_index = 1
 
-    print(f"Building {target_mb} MB Wikipedia corpus in {output_dir}/...")
-
     current_file_path = output_dir / f"wiki_corpus_part{file_index}.txt"
-    current_file = current_file_path.open("w", encoding="utf-8")
+    current_file = current_file_path.open("wb")
     current_file_size = 0
 
     try:
-        while total_written < target_bytes:
-            articles = fetch_random_wiki_articles()
-            for article in articles:
-                # Add a separator between articles
-                content = article + "\n\n"
-                content_bytes = content.encode("utf-8")
-                size = len(content_bytes)
+        with tarfile.open(archive_path, "r:gz") as tar:
+            # Find the main training text file in the archive
+            member = None
+            for m in tar.getmembers():
+                if "wiki.train.tokens" in m.name:
+                    member = m
+                    break
 
-                # Check chunk limit
-                if current_file_size + size > MAX_FILE_SIZE_BYTES:
+            if not member:
+                print(
+                    "Error: Could not find 'wiki.train.tokens' in archive.",
+                    file=sys.stderr,
+                )
+                return
+
+            f = tar.extractfile(member)
+            if f is None:
+                print("Error: Could not extract file.", file=sys.stderr)
+                return
+
+            chunk_size = 1024 * 1024  # 1 MB chunks for reading
+
+            while total_written < target_bytes:
+                bytes_to_read = min(chunk_size, target_bytes - total_written)
+                data = f.read(bytes_to_read)
+                if not data:
+                    break  # End of file reached
+
+                bytes_to_write = len(data)
+
+                # Check chunk limit (split to a new file if this write would exceed max file size)
+                if current_file_size + bytes_to_write > MAX_FILE_SIZE_BYTES:
                     current_file.close()
                     file_index += 1
                     current_file_path = output_dir / f"wiki_corpus_part{file_index}.txt"
-                    current_file = current_file_path.open("w", encoding="utf-8")
+                    current_file = current_file_path.open("wb")
                     current_file_size = 0
 
-                current_file.write(content)
-                current_file_size += size
-                total_written += size
+                current_file.write(data)
+                current_file_size += bytes_to_write
+                total_written += bytes_to_write
 
-                if total_written >= target_bytes:
-                    break
-
-            # Print progress
-            progress = min(100.0, (total_written / target_bytes) * 100)
-            print(
-                f"\rProgress: {progress:.1f}% ({total_written / (1024 * 1024):.2f} MB / {target_mb:.2f} MB)",
-                end="",
-                flush=True,
-            )
+                progress = min(100.0, (total_written / target_bytes) * 100)
+                sys.stdout.write(
+                    f"\rProgress: {progress:.1f}% ({total_written / (1024 * 1024):.2f} MB / {target_mb:.2f} MB)"
+                )
+                sys.stdout.flush()
 
         print("\nDataset built successfully!")
     finally:
         current_file.close()
+        # Clean up the downloaded archive
+        if archive_path.exists():
+            archive_path.unlink()
+            print("Cleaned up temporary archive.")
 
 
 def main() -> None:
@@ -107,7 +128,7 @@ def main() -> None:
             # Add project root to path so we can import src.settings
             PROJECT_ROOT = Path(__file__).resolve().parent.parent
             if str(PROJECT_ROOT) not in sys.path:
-                sys.path.append(str(PROJECT_ROOT))
+                sys.path.insert(0, str(PROJECT_ROOT))
 
             from src.settings import load_settings
 
