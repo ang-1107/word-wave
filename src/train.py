@@ -97,19 +97,13 @@ def save_artifacts(
     model: WordWaveModel,
     model_config: dict[str, object],
     training_config: dict[str, object] | None,
-    vocabulary_state: dict[str, object],
     max_len: int,
     metrics_payload: dict[str, float],
-    vocabulary_path: str | Path = SETTINGS.runtime.tokenizer_path,
     model_path: str | Path = SETTINGS.runtime.model_path,
 ) -> None:
     model_path = Path(model_path)
-    vocabulary_path = Path(vocabulary_path)
     model_path.parent.mkdir(parents=True, exist_ok=True)
-    vocabulary_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Saving tokenizer to {vocabulary_path}...")
-    torch.save(vocabulary_state, vocabulary_path)
     print(f"Saving model to {model_path}...")
     torch.save(
         {
@@ -121,7 +115,7 @@ def save_artifacts(
         },
         model_path,
     )
-    print("Saved model and tokenizer artifacts.")
+    print("Saved model.")
 
 
 def _build_checkpoint_payload(
@@ -285,8 +279,19 @@ def train_model(
         torch.cuda.manual_seed_all(seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Building vocabulary from {data_path}...")
-    vocabulary = build_vocabulary_from_source(data_path, max_vocab_size=max_vocab_size)
+    vocabulary_path = Path(vocabulary_path)
+    if vocabulary_path.exists():
+        print(f"Loading cached vocabulary from {vocabulary_path}...")
+        vocabulary = Vocabulary.load(vocabulary_path)
+    else:
+        print(f"Building vocabulary from {data_path}...")
+        vocabulary = build_vocabulary_from_source(
+            data_path, max_vocab_size=max_vocab_size
+        )
+        print(f"Caching built vocabulary to {vocabulary_path}...")
+        vocabulary_path.parent.mkdir(parents=True, exist_ok=True)
+        vocabulary.save(vocabulary_path)
+
     print(f"Vocabulary size: {len(vocabulary.word_to_idx)}")
 
     print("Building streaming dataloaders...")
@@ -516,10 +521,8 @@ def train_model(
         model,
         model_config,
         training_config,
-        vocabulary.to_state_dict(),
         max_len=max_len,
         metrics_payload=metrics_payload,
-        vocabulary_path=vocabulary_path,
         model_path=model_path,
     )
 
