@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import cast
 
 import torch
+from tqdm import tqdm
 
 # Tokenize words and punctuation separately
 TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]+")
@@ -50,6 +51,14 @@ class Vocabulary:
     ) -> Vocabulary:
         word_freqs = Counter(token for token in tokens if token)
 
+        # Performance optimization: if corpus is massive, prune extremely rare words from BPE training
+        # to prevent the O(V_unique * V_max) loop from taking hours.
+        if len(word_freqs) > 100000:
+            prune_freq = max(min_freq, 5)
+            word_freqs = Counter(
+                {w: f for w, f in word_freqs.items() if f >= prune_freq}
+            )
+
         # Initialize word representations with characters + </w> boundary
         splits = {word: list(word) + ["</w>"] for word in word_freqs}
 
@@ -63,41 +72,46 @@ class Vocabulary:
 
         merges: dict[tuple[str, str], int] = {}
 
+        # Calculate how many merges we need for tqdm
+        target_merges = max_vocab_size - len(word_to_idx)
+
         # BPE Training Loop
-        while len(word_to_idx) < max_vocab_size:
-            pair_freqs: Counter[tuple[str, str]] = Counter()
-            for word, freq in word_freqs.items():
-                split = splits[word]
-                if len(split) < 2:
-                    continue
-                for i in range(len(split) - 1):
-                    pair_freqs[(split[i], split[i + 1])] += freq
+        with tqdm(total=target_merges, desc="Training BPE Vocabulary") as pbar:
+            while len(word_to_idx) < max_vocab_size:
+                pair_freqs: Counter[tuple[str, str]] = Counter()
+                for word, freq in word_freqs.items():
+                    split = splits[word]
+                    if len(split) < 2:
+                        continue
+                    for i in range(len(split) - 1):
+                        pair_freqs[(split[i], split[i + 1])] += freq
 
-            if not pair_freqs:
-                break
+                if not pair_freqs:
+                    break
 
-            best_pair, max_freq = pair_freqs.most_common(1)[0]
-            if max_freq < min_freq:
-                break
+                best_pair, max_freq = pair_freqs.most_common(1)[0]
+                if max_freq < min_freq:
+                    break
 
-            new_token = best_pair[0] + best_pair[1]
-            word_to_idx[new_token] = len(word_to_idx)
-            merges[best_pair] = len(merges)
+                new_token = best_pair[0] + best_pair[1]
+                word_to_idx[new_token] = len(word_to_idx)
+                merges[best_pair] = len(merges)
 
-            # Apply merge to all splits
-            for word, split in splits.items():
-                if len(split) < 2:
-                    continue
-                new_split: list[str] = []
-                i = 0
-                while i < len(split):
-                    if i < len(split) - 1 and (split[i], split[i + 1]) == best_pair:
-                        new_split.append(new_token)
-                        i += 2
-                    else:
-                        new_split.append(split[i])
-                        i += 1
-                splits[word] = new_split
+                # Apply merge to all splits
+                for word, split in splits.items():
+                    if len(split) < 2:
+                        continue
+                    new_split: list[str] = []
+                    i = 0
+                    while i < len(split):
+                        if i < len(split) - 1 and (split[i], split[i + 1]) == best_pair:
+                            new_split.append(new_token)
+                            i += 2
+                        else:
+                            new_split.append(split[i])
+                            i += 1
+                    splits[word] = new_split
+                pbar.update(1)
 
         idx_to_word = {idx: token for token, idx in word_to_idx.items()}
         return cls(word_to_idx=word_to_idx, idx_to_word=idx_to_word, merges=merges)

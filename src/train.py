@@ -287,6 +287,8 @@ def train_model(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Building vocabulary from {data_path}...")
     vocabulary = build_vocabulary_from_source(data_path, max_vocab_size=max_vocab_size)
+    print(f"Vocabulary size: {len(vocabulary.word_to_idx)}")
+
     print("Building streaming dataloaders...")
     train_loader, validation_loader, test_loader = build_streaming_dataloaders(
         data_path,

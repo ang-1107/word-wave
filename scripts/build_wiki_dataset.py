@@ -53,17 +53,17 @@ def build_dataset(target_mb: float, output_dir: Path) -> None:
 
     try:
         with tarfile.open(archive_path, "r:gz") as tar:
-            # Find the main training text file in the archive
+            # Find the main training text file in the archive (it's always the largest file)
             member = None
+            max_size = -1
             for m in tar.getmembers():
-                if "wiki.train.tokens" in m.name:
+                if m.isfile() and m.size > max_size:
+                    max_size = m.size
                     member = m
-                    break
 
             if not member:
                 print(
-                    "Error: Could not find 'wiki.train.tokens' in archive.",
-                    file=sys.stderr,
+                    "Error: Could not find any valid files in archive.", file=sys.stderr
                 )
                 return
 
